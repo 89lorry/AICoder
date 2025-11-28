@@ -1,0 +1,19 @@
+# MCP Multi-Agent System Requirements
+
+# Core dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# MCP Protocol
+# Note: Add specific MCP SDK when available
+# mcp-sdk>=1.0.0
+
+# Web framework (if needed for UI)
+flask>=2.3.0
+requests>=2.31.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# Code execution and testing
+subprocess32>=3.5.4; python_version < '3'
