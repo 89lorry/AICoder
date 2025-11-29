@@ -4,6 +4,19 @@
 pytest>=7.4.0
 pytest-cov>=4.1.0
 
+# LangChain for agent memory and chains
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-community>=0.0.20
+
+# LLM providers (adjust based on your MCP provider)
+openai>=1.0.0
+anthropic>=0.7.0
+
+# Memory backends
+chromadb>=0.4.0
+faiss-cpu>=1.7.4
+
 # MCP Protocol
 # Note: Add specific MCP SDK when available
 # mcp-sdk>=1.0.0
