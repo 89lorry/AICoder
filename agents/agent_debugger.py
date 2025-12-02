@@ -5,10 +5,8 @@ Reviews the results from the generated code and debugs
 
 import logging
 import os
-import subprocess
 from typing import Dict, Any, List, Optional
 from config.settings import Settings
-from utils.file_manager import FileManager
 from utils.memory_manager import MemoryManager
 from utils.langchain_wrapper import LangChainWrapper
 
@@ -16,7 +14,7 @@ from utils.langchain_wrapper import LangChainWrapper
 class AgentDebugger:
     """Agent responsible for debugging and fixing code issues"""
     
-    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True):
+    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True, local_server=None):
         """
         Initialize the Debugger agent
         
@@ -25,12 +23,19 @@ class AgentDebugger:
             api_usage_tracker: Optional API usage tracker instance
             workspace_dir: Directory where code files are located
             enable_memory: Whether to enable LangChain memory
+            local_server: Optional LocalServer instance for file operations and test execution. If None, creates one.
         """
         self.mcp_client = mcp_client
         self.api_usage_tracker = api_usage_tracker
-        self.file_manager = FileManager()
         self.logger = logging.getLogger(__name__)
         self.workspace_dir = workspace_dir or Settings.WORKSPACE_DIR
+        
+        # Initialize LocalServer if not provided
+        if local_server is None:
+            from server.local_server import LocalServer
+            self.local_server = LocalServer(workspace_dir=self.workspace_dir)
+        else:
+            self.local_server = local_server
         
         # Initialize LangChain memory
         self.memory_manager = None
@@ -267,9 +272,13 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
                 fixed_file_code = self._extract_code_from_response(response)
                 fixed_code[filename] = fixed_file_code
                 
-                # Save fixed code to file
-                filepath = os.path.join(self.workspace_dir, filename)
-                self.file_manager.write_file(filepath, fixed_file_code)
+                # Save fixed code to file using LocalServer
+                # Ensure project path is set
+                if not self.local_server.current_project_path:
+                    self.local_server.current_project_path = self.workspace_dir
+                    self.local_server.current_project = "debug_project"
+                
+                filepath = self.local_server.save_file(filename, fixed_file_code)
                 
                 self.debug_log.append({
                     "action": "fix_code",
@@ -288,7 +297,7 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
     
     def verify_fixes(self) -> Dict[str, Any]:
         """
-        Verify that fixes resolve the issues by re-running tests
+        Verify that fixes resolve the issues by re-running tests via LocalServer
         
         Returns:
             Dictionary containing verification results
@@ -296,34 +305,39 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
         if not self.fixed_code:
             raise ValueError("No fixed code available. Call debug_code() first.")
         
-        self.logger.info("Verifying fixes by re-running tests...")
+        self.logger.info("Verifying fixes by re-running tests via LocalServer...")
         
         # Update code package with fixed code
         original_code = self.code_package.get("code", {})
         self.code_package["code"] = self.fixed_code
         
-        # Re-run tests
+        # Ensure project path is set
+        if not self.local_server.current_project_path:
+            self.local_server.current_project_path = self.workspace_dir
+            self.local_server.current_project = "debug_project"
+        
+        # Re-run tests using LocalServer
         try:
-            original_cwd = os.getcwd()
-            os.chdir(self.workspace_dir)
+            # Determine test file name
+            test_file = "test_main.py"
+            if self.test_results:
+                # Extract just the filename from the full path
+                test_file_path = self.test_results.get("test_file", "")
+                if test_file_path:
+                    test_file = os.path.basename(test_file_path)
             
-            # Run pytest again
-            test_file = self.test_results.get("test_file") if self.test_results else "test_main.py"
-            result = subprocess.run(
-                ["pytest", test_file, "-v", "--tb=short"],
-                capture_output=True,
-                text=True,
+            # Use LocalServer to run tests
+            test_results = self.local_server.run_tests(
+                test_file=test_file,
                 timeout=Settings.TIMEOUT_SECONDS
             )
             
-            os.chdir(original_cwd)
-            
             verification = {
-                "exit_code": result.returncode,
-                "passed": result.returncode == 0,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "output": result.stdout + result.stderr,
+                "exit_code": test_results.get("exit_code", -1),
+                "passed": test_results.get("passed", False),
+                "stdout": test_results.get("stdout", ""),
+                "stderr": test_results.get("stderr", ""),
+                "output": test_results.get("output", ""),
                 "iteration": self.current_iteration
             }
             

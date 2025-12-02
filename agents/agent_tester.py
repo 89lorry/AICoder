@@ -5,7 +5,6 @@ Writes pytest cases and executes them
 
 import logging
 import os
-import subprocess
 import json
 from typing import Dict, Any, List, Optional
 from config.settings import Settings
@@ -17,7 +16,7 @@ from utils.langchain_wrapper import LangChainWrapper
 class AgentTester:
     """Agent responsible for writing and executing test cases"""
     
-    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True):
+    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True, local_server=None):
         """
         Initialize the Tester agent
         
@@ -26,12 +25,20 @@ class AgentTester:
             api_usage_tracker: Optional API usage tracker instance
             workspace_dir: Directory where test files will be created
             enable_memory: Whether to enable LangChain memory
+            local_server: Optional LocalServer instance for test execution. If None, creates one.
         """
         self.mcp_client = mcp_client
         self.api_usage_tracker = api_usage_tracker
         self.file_manager = FileManager()
         self.logger = logging.getLogger(__name__)
         self.workspace_dir = workspace_dir or Settings.WORKSPACE_DIR
+        
+        # Initialize LocalServer if not provided
+        if local_server is None:
+            from server.local_server import LocalServer
+            self.local_server = LocalServer(workspace_dir=self.workspace_dir)
+        else:
+            self.local_server = local_server
         
         # Initialize LangChain memory
         self.memory_manager = None
@@ -59,13 +66,26 @@ class AgentTester:
     
     def receive_code(self, code_package: Dict[str, Any]) -> None:
         """
-        Receive code package from Agent B
+        Receive code package from Agent B and save code files to LocalServer
         
         Args:
             code_package: Dictionary containing generated code and metadata
         """
         self.code_package = code_package
         self.logger.info(f"Received code package with {len(code_package.get('code', {}))} files")
+        
+        # Save code files to LocalServer so they're available for testing
+        code_files = code_package.get("code", {})
+        if code_files:
+            # Set up project path in local_server if not already set
+            if not self.local_server.current_project_path:
+                self.local_server.current_project_path = self.workspace_dir
+                self.local_server.current_project = "test_project"
+            
+            # Save each code file
+            for filename, content in code_files.items():
+                self.local_server.save_file(filename, content)
+                self.logger.debug(f"Saved code file to LocalServer: {filename}")
     
     def generate_test_cases(self) -> str:
         """
@@ -134,9 +154,14 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
             # Extract test code from response
             test_code = self._extract_code_from_response(response)
             
-            # Save test file
-            self.test_file_path = os.path.join(self.workspace_dir, "test_main.py")
-            self.file_manager.write_file(self.test_file_path, test_code)
+            # Save test file using LocalServer
+            # Ensure we have a project path set up (use workspace_dir as project path)
+            if not self.local_server.current_project_path:
+                # Set up a temporary project path for test execution
+                self.local_server.current_project_path = self.workspace_dir
+                self.local_server.current_project = "test_project"
+            
+            self.test_file_path = self.local_server.save_file("test_main.py", test_code)
             
             self.logger.info(f"Test cases generated and saved to {self.test_file_path}")
             self.test_cases.append(test_code)
@@ -149,7 +174,7 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
     
     def execute_tests(self) -> Dict[str, Any]:
         """
-        Execute generated test cases using pytest
+        Execute generated test cases using pytest via LocalServer
         
         Returns:
             Dictionary containing test execution results
@@ -157,72 +182,28 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
         if not self.test_file_path or not os.path.exists(self.test_file_path):
             raise ValueError("No test file found. Call generate_test_cases() first.")
         
-        self.logger.info("Executing pytest tests...")
+        self.logger.info("Executing pytest tests via LocalServer...")
         
-        try:
-            # Change to workspace directory for execution
-            original_cwd = os.getcwd()
-            os.chdir(self.workspace_dir)
-            
-            # Run pytest with JSON output
-            result = subprocess.run(
-                ["pytest", "test_main.py", "-v", "--tb=short", "--json-report", "--json-report-file=pytest_report.json"],
-                capture_output=True,
-                text=True,
-                timeout=Settings.TIMEOUT_SECONDS
-            )
-            
-            # Restore original directory
-            os.chdir(original_cwd)
-            
-            # Parse test results
-            test_output = result.stdout + result.stderr
-            exit_code = result.returncode
-            
-            # Try to load JSON report if available
-            json_report_path = os.path.join(self.workspace_dir, "pytest_report.json")
-            json_report = None
-            if os.path.exists(json_report_path):
-                try:
-                    with open(json_report_path, 'r') as f:
-                        json_report = json.load(f)
-                except Exception as e:
-                    self.logger.warning(f"Could not load JSON report: {str(e)}")
-            
-            # Build results dictionary
-            test_results = {
-                "exit_code": exit_code,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "output": test_output,
-                "passed": exit_code == 0,
-                "json_report": json_report,
-                "test_file": self.test_file_path
-            }
-            
-            self.test_results = test_results
-            
-            if exit_code == 0:
-                self.logger.info("All tests passed!")
-            else:
-                self.logger.warning(f"Tests failed with exit code {exit_code}")
-            
-            return test_results
-            
-        except subprocess.TimeoutExpired:
-            self.logger.error("Test execution timed out")
-            return {
-                "exit_code": -1,
-                "error": "Test execution timed out",
-                "passed": False
-            }
-        except Exception as e:
-            self.logger.error(f"Error executing tests: {str(e)}")
-            return {
-                "exit_code": -1,
-                "error": str(e),
-                "passed": False
-            }
+        # Ensure project path is set
+        if not self.local_server.current_project_path:
+            self.local_server.current_project_path = self.workspace_dir
+            self.local_server.current_project = "test_project"
+        
+        # Use LocalServer to run tests
+        test_results = self.local_server.run_tests(
+            test_file="test_main.py",
+            timeout=Settings.TIMEOUT_SECONDS
+        )
+        
+        # Store results
+        self.test_results = test_results
+        
+        if test_results.get("passed"):
+            self.logger.info("All tests passed!")
+        else:
+            self.logger.warning(f"Tests failed with exit code {test_results.get('exit_code', -1)}")
+        
+        return test_results
     
     def analyze_test_results(self) -> Dict[str, Any]:
         """

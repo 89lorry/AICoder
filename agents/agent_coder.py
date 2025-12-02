@@ -8,7 +8,6 @@ import logging
 import os
 from typing import Dict, Any, Optional
 from config.settings import Settings
-from utils.file_manager import FileManager
 from utils.memory_manager import MemoryManager
 from utils.langchain_wrapper import LangChainWrapper
 
@@ -16,7 +15,7 @@ from utils.langchain_wrapper import LangChainWrapper
 class AgentCoder:
     """Agent responsible for code generation based on architectural plan"""
     
-    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True):
+    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True, local_server=None):
         """
         Initialize the Coder agent
         
@@ -25,12 +24,19 @@ class AgentCoder:
             api_usage_tracker: Optional API usage tracker instance
             workspace_dir: Directory where generated code will be saved
             enable_memory: Whether to enable LangChain memory
+            local_server: Optional LocalServer instance for file operations. If None, creates one.
         """
         self.mcp_client = mcp_client
         self.api_usage_tracker = api_usage_tracker
-        self.file_manager = FileManager()
         self.logger = logging.getLogger(__name__)
         self.workspace_dir = workspace_dir or Settings.WORKSPACE_DIR
+        
+        # Initialize LocalServer if not provided
+        if local_server is None:
+            from server.local_server import LocalServer
+            self.local_server = LocalServer(workspace_dir=self.workspace_dir)
+        else:
+            self.local_server = local_server
         
         # Initialize LangChain memory
         self.memory_manager = None
@@ -76,8 +82,10 @@ class AgentCoder:
         
         self.logger.info("Starting code generation...")
         
-        # Ensure workspace directory exists
-        self.file_manager.create_directory(self.workspace_dir)
+        # Ensure workspace directory exists and set up LocalServer project path
+        if not self.local_server.current_project_path:
+            self.local_server.current_project_path = self.workspace_dir
+            self.local_server.current_project = "code_project"
         
         # Generate each file
         file_structure = self.architectural_plan.get("file_structure", {})
@@ -133,16 +141,23 @@ class AgentCoder:
     
     def save_code_to_files(self) -> Dict[str, str]:
         """
-        Save generated code to files in workspace directory
+        Save generated code to files using LocalServer
         
         Returns:
             Dictionary mapping filenames to file paths
         """
+        if not self.generated_code:
+            raise ValueError("No code generated. Call generate_code() first.")
+        
+        # Ensure project path is set
+        if not self.local_server.current_project_path:
+            self.local_server.current_project_path = self.workspace_dir
+            self.local_server.current_project = "code_project"
+        
         saved_files = {}
         
         for filename, code in self.generated_code.items():
-            filepath = os.path.join(self.workspace_dir, filename)
-            self.file_manager.write_file(filepath, code)
+            filepath = self.local_server.save_file(filename, code)
             saved_files[filename] = filepath
             self.logger.info(f"Saved {filename} to {filepath}")
         

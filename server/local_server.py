@@ -94,6 +94,38 @@ class LocalServer:
         
         return self.current_project_path
     
+    def save_file(self, filename, content, project_path=None):
+        """
+        Save a single file to the project directory
+        
+        Args:
+            filename (str): Name of the file to save
+            content (str): Content of the file
+            project_path (str, optional): Project path to save to. If None, uses current_project_path
+        
+        Returns:
+            str: Path to the saved file
+        """
+        target_path = project_path or self.current_project_path
+        if not target_path:
+            raise ValueError("No project path available. Call receive_code_package() first or provide project_path.")
+        
+        # Ensure project directory exists
+        os.makedirs(target_path, exist_ok=True)
+        
+        filepath = os.path.join(target_path, filename)
+        
+        # Create subdirectories if needed
+        file_dir = os.path.dirname(filepath)
+        if file_dir and file_dir != target_path:
+            os.makedirs(file_dir, exist_ok=True)
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        print(f"[LocalServer] Saved file: {filename}")
+        return filepath
+    
     def execute_code(self, entry_point="main.py", timeout=30):
         """
         Execute the generated code
@@ -178,6 +210,119 @@ class LocalServer:
                 "return_code": -1,
                 "execution_time": execution_time,
                 "success": False,
+                "timestamp": datetime.now().isoformat()
+            }
+            print(f"[LocalServer] ERROR: {str(e)}")
+            return self.execution_results
+    
+    def run_tests(self, test_file="test_main.py", timeout=300):
+        """
+        Run pytest tests in the current project directory
+        
+        Args:
+            test_file (str): Test file to run (default: "test_main.py")
+            timeout (int): Maximum execution time in seconds (default: 300)
+        
+        Returns:
+            dict: Test execution results containing stdout, stderr, return_code, etc.
+        """
+        if not self.current_project_path or not os.path.exists(self.current_project_path):
+            raise ValueError("Project path not found. Call save_code_to_directory first.")
+        
+        test_file_path = os.path.join(self.current_project_path, test_file)
+        
+        if not os.path.exists(test_file_path):
+            raise FileNotFoundError(f"Test file '{test_file}' not found in project directory")
+        
+        print(f"\n[LocalServer] Running tests: {test_file}")
+        print("=" * 60)
+        
+        start_time = time.time()
+        
+        try:
+            # Run pytest with JSON output
+            result = subprocess.run(
+                ["pytest", test_file, "-v", "--tb=short", "--json-report", "--json-report-file=pytest_report.json"],
+                cwd=self.current_project_path,
+                capture_output=True,
+                text=True,
+                timeout=timeout
+            )
+            
+            execution_time = time.time() - start_time
+            
+            # Try to load JSON report if available
+            json_report = None
+            json_report_path = os.path.join(self.current_project_path, "pytest_report.json")
+            if os.path.exists(json_report_path):
+                try:
+                    import json
+                    with open(json_report_path, 'r') as f:
+                        json_report = json.load(f)
+                except Exception as e:
+                    print(f"[LocalServer] Warning: Could not load JSON report: {str(e)}")
+            
+            # Store execution results
+            test_output = result.stdout + result.stderr
+            self.execution_results = {
+                "exit_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "output": test_output,
+                "return_code": result.returncode,
+                "execution_time": execution_time,
+                "success": result.returncode == 0,
+                "passed": result.returncode == 0,
+                "json_report": json_report,
+                "test_file": test_file_path,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Print results
+            print(f"[LocalServer] Test execution completed in {execution_time:.2f} seconds")
+            print(f"[LocalServer] Return code: {result.returncode}")
+            
+            if result.stdout:
+                print("\n--- STDOUT ---")
+                print(result.stdout)
+            
+            if result.stderr:
+                print("\n--- STDERR ---")
+                print(result.stderr)
+            
+            print("=" * 60)
+            
+            return self.execution_results
+            
+        except subprocess.TimeoutExpired:
+            execution_time = time.time() - start_time
+            self.execution_results = {
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": f"Test execution timeout after {timeout} seconds",
+                "output": f"Test execution timeout after {timeout} seconds",
+                "return_code": -1,
+                "execution_time": execution_time,
+                "success": False,
+                "passed": False,
+                "error": "Test execution timed out",
+                "timestamp": datetime.now().isoformat()
+            }
+            print(f"[LocalServer] ERROR: Test execution timeout after {timeout} seconds")
+            return self.execution_results
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            self.execution_results = {
+                "exit_code": -1,
+                "stdout": "",
+                "stderr": str(e),
+                "output": str(e),
+                "return_code": -1,
+                "execution_time": execution_time,
+                "success": False,
+                "passed": False,
+                "error": str(e),
                 "timestamp": datetime.now().isoformat()
             }
             print(f"[LocalServer] ERROR: {str(e)}")
