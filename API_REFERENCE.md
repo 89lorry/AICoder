@@ -46,8 +46,8 @@ receive_code(code_package: Dict[str, Any]) -> None
 generate_test_cases() -> str
 # Output: test code as string
 
-execute_tests() -> Dict[str, Any]
-# Output: {"exit_code": int, "stdout": str, "stderr": str, "output": str, "passed": bool, "json_report": Dict, "test_file": str}
+# Note: Use local_server.run_tests() directly to execute tests
+# Example: tester.local_server.run_tests("test_main.py", timeout=300)
 
 analyze_test_results() -> Dict[str, Any]
 # Output: {"overall_status": str, "exit_code": int, "has_failures": bool, "failures": List[Dict], "failure_count": int, ...}

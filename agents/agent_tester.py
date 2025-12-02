@@ -183,40 +183,6 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
             self.logger.error(f"Error generating test cases: {str(e)}")
             raise
     
-    def execute_tests(self) -> Dict[str, Any]:
-        """
-        Execute generated test cases using pytest via LocalServer
-        
-        Returns:
-            Dictionary containing test execution results
-        """
-        if not self.test_file_path or not os.path.exists(self.test_file_path):
-            raise ValueError("No test file found. Call generate_test_cases() first.")
-        
-        if not self.local_server.current_project_path:
-            raise ValueError("No code package saved. Call receive_code() and generate_test_cases() first.")
-        
-        self.logger.info("Executing pytest tests via LocalServer...")
-        
-        # Use LocalServer.run_tests() directly
-        test_results = self.local_server.run_tests(
-            test_file="test_main.py",
-            timeout=Settings.TIMEOUT_SECONDS
-        )
-        
-        # Store results
-        self.test_results = test_results
-        
-        if test_results.get("passed"):
-            self.logger.info("All tests passed!")
-        else:
-            self.logger.warning(f"Tests failed with exit code {test_results.get('exit_code', -1)}")
-            # Cleanup workspace on test failure - wait for debugger to regenerate
-            self.logger.info("Cleaning up workspace - waiting for debugger to regenerate code")
-            self.local_server.cleanup_workspace()
-        
-        return test_results
-    
     def analyze_test_results(self) -> Dict[str, Any]:
         """
         Analyze test execution results
@@ -225,7 +191,7 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
             Dictionary containing analysis of test results
         """
         if not self.test_results:
-            raise ValueError("No test results available. Call execute_tests() first.")
+            raise ValueError("No test results available. Call local_server.run_tests() first.")
         
         self.logger.info("Analyzing test results...")
         
@@ -267,7 +233,7 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
         if not self.code_package:
             raise ValueError("No code package available")
         if not self.test_results:
-            raise ValueError("No test results available. Run execute_tests() first.")
+            raise ValueError("No test results available. Run local_server.run_tests() first.")
         
         # Include test file content in code package so debugger has it after cleanup
         code_package_with_tests = self.code_package.copy()
@@ -294,7 +260,7 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
             Dictionary containing code package and test results
         """
         if not self.test_results:
-            raise ValueError("No test results available. Run execute_tests() first.")
+            raise ValueError("No test results available. Run local_server.run_tests() first.")
         
         self.logger.info("Passing code and test results to Debugger agent")
         return self.get_code_and_test_results()

@@ -22,7 +22,7 @@ Code Package (Dict)
 [Agent C: Tester]
     ├─ receive_code(Dict) → None
     ├─ generate_test_cases() → str
-    ├─ execute_tests() → Dict
+    ├─ local_server.run_tests() → Dict
     └─ [On failure] cleanup_workspace()
     ↓
 Test Results + Code Package (Dict)
