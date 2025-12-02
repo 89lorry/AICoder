@@ -77,15 +77,17 @@ class AgentTester:
         # Save code files to LocalServer so they're available for testing
         code_files = code_package.get("code", {})
         if code_files:
-            # Set up project path in local_server if not already set
-            if not self.local_server.current_project_path:
-                self.local_server.current_project_path = self.workspace_dir
-                self.local_server.current_project = "test_project"
+            # Build code package for LocalServer
+            server_package = {
+                "project_name": "test_project",
+                "files": code_files,
+                "entry_point": "main.py"
+            }
             
-            # Save each code file
-            for filename, content in code_files.items():
-                self.local_server.save_file(filename, content)
-                self.logger.debug(f"Saved code file to LocalServer: {filename}")
+            # Receive and save code package
+            self.local_server.receive_code_package(server_package)
+            self.local_server.save_code_to_directory(server_package)
+            self.logger.debug(f"Saved {len(code_files)} code files to LocalServer")
     
     def generate_test_cases(self) -> str:
         """
@@ -154,14 +156,23 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
             # Extract test code from response
             test_code = self._extract_code_from_response(response)
             
-            # Save test file using LocalServer
-            # Ensure we have a project path set up (use workspace_dir as project path)
+            # Add test file to existing code package and save
             if not self.local_server.current_project_path:
-                # Set up a temporary project path for test execution
-                self.local_server.current_project_path = self.workspace_dir
-                self.local_server.current_project = "test_project"
+                raise ValueError("No code package saved. Call receive_code() first.")
             
-            self.test_file_path = self.local_server.save_file("test_main.py", test_code)
+            # Add test file to the code package
+            code_files = self.code_package.get("code", {}).copy()
+            code_files["test_main.py"] = test_code
+            
+            # Update and save code package with test file
+            server_package = {
+                "project_name": "test_project",
+                "files": code_files,
+                "entry_point": "main.py"
+            }
+            
+            self.local_server.save_code_to_directory(server_package)
+            self.test_file_path = os.path.join(self.local_server.current_project_path, "test_main.py")
             
             self.logger.info(f"Test cases generated and saved to {self.test_file_path}")
             self.test_cases.append(test_code)
@@ -184,10 +195,8 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
         
         self.logger.info("Executing pytest tests via LocalServer...")
         
-        # Ensure project path is set
         if not self.local_server.current_project_path:
-            self.local_server.current_project_path = self.workspace_dir
-            self.local_server.current_project = "test_project"
+            raise ValueError("No code package saved. Call receive_code() and generate_test_cases() first.")
         
         # Use LocalServer to run tests
         test_results = self.local_server.run_tests(
@@ -202,6 +211,9 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
             self.logger.info("All tests passed!")
         else:
             self.logger.warning(f"Tests failed with exit code {test_results.get('exit_code', -1)}")
+            # Cleanup workspace on test failure - wait for debugger to regenerate
+            self.logger.info("Cleaning up workspace - waiting for debugger to regenerate code")
+            self.local_server.cleanup_workspace()
         
         return test_results
     
@@ -257,8 +269,18 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
         if not self.test_results:
             raise ValueError("No test results available. Run execute_tests() first.")
         
+        # Include test file content in code package so debugger has it after cleanup
+        code_package_with_tests = self.code_package.copy()
+        if self.test_file_path and os.path.exists(self.test_file_path):
+            with open(self.test_file_path, 'r', encoding='utf-8') as f:
+                test_content = f.read()
+            # Add test file to code package
+            if "code" not in code_package_with_tests:
+                code_package_with_tests["code"] = {}
+            code_package_with_tests["code"]["test_main.py"] = test_content
+        
         return {
-            "code_package": self.code_package,
+            "code_package": code_package_with_tests,
             "test_results": self.test_results,
             "test_analysis": self.analyze_test_results() if self.test_results else None,
             "test_file": self.test_file_path

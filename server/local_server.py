@@ -94,38 +94,6 @@ class LocalServer:
         
         return self.current_project_path
     
-    def save_file(self, filename, content, project_path=None):
-        """
-        Save a single file to the project directory
-        
-        Args:
-            filename (str): Name of the file to save
-            content (str): Content of the file
-            project_path (str, optional): Project path to save to. If None, uses current_project_path
-        
-        Returns:
-            str: Path to the saved file
-        """
-        target_path = project_path or self.current_project_path
-        if not target_path:
-            raise ValueError("No project path available. Call receive_code_package() first or provide project_path.")
-        
-        # Ensure project directory exists
-        os.makedirs(target_path, exist_ok=True)
-        
-        filepath = os.path.join(target_path, filename)
-        
-        # Create subdirectories if needed
-        file_dir = os.path.dirname(filepath)
-        if file_dir and file_dir != target_path:
-            os.makedirs(file_dir, exist_ok=True)
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        print(f"[LocalServer] Saved file: {filename}")
-        return filepath
-    
     def execute_code(self, entry_point="main.py", timeout=30):
         """
         Execute the generated code

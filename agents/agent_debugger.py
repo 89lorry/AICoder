@@ -272,14 +272,6 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
                 fixed_file_code = self._extract_code_from_response(response)
                 fixed_code[filename] = fixed_file_code
                 
-                # Save fixed code to file using LocalServer
-                # Ensure project path is set
-                if not self.local_server.current_project_path:
-                    self.local_server.current_project_path = self.workspace_dir
-                    self.local_server.current_project = "debug_project"
-                
-                filepath = self.local_server.save_file(filename, fixed_file_code)
-                
                 self.debug_log.append({
                     "action": "fix_code",
                     "file": filename,
@@ -287,6 +279,28 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
                 })
                 
                 self.logger.info(f"Fixed code for {filename}")
+        
+        # Save all fixed code as a code package (include test file if available)
+        if fixed_code:
+            # Include test file from original code package if it exists
+            files_to_save = fixed_code.copy()
+            if self.test_results and self.test_results.get("test_file"):
+                test_file_path = self.test_results.get("test_file")
+                if os.path.exists(test_file_path):
+                    test_filename = os.path.basename(test_file_path)
+                    with open(test_file_path, 'r', encoding='utf-8') as f:
+                        files_to_save[test_filename] = f.read()
+            
+            code_package = {
+                "project_name": "debug_project",
+                "files": files_to_save,
+                "entry_point": "main.py"
+            }
+            
+            # Receive and save fixed code package
+            self.local_server.receive_code_package(code_package)
+            project_path = self.local_server.save_code_to_directory(code_package)
+            self.logger.info(f"Saved fixed code package to {project_path}")
                 
             except Exception as e:
                 self.logger.error(f"Error fixing {filename}: {str(e)}")
@@ -307,14 +321,8 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
         
         self.logger.info("Verifying fixes by re-running tests via LocalServer...")
         
-        # Update code package with fixed code
-        original_code = self.code_package.get("code", {})
-        self.code_package["code"] = self.fixed_code
-        
-        # Ensure project path is set
         if not self.local_server.current_project_path:
-            self.local_server.current_project_path = self.workspace_dir
-            self.local_server.current_project = "debug_project"
+            raise ValueError("No fixed code package saved. Call debug_code() first.")
         
         # Re-run tests using LocalServer
         try:

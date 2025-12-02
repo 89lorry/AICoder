@@ -82,11 +82,6 @@ class AgentCoder:
         
         self.logger.info("Starting code generation...")
         
-        # Ensure workspace directory exists and set up LocalServer project path
-        if not self.local_server.current_project_path:
-            self.local_server.current_project_path = self.workspace_dir
-            self.local_server.current_project = "code_project"
-        
         # Generate each file
         file_structure = self.architectural_plan.get("file_structure", {})
         files = file_structure.get("files", {})
@@ -149,15 +144,21 @@ class AgentCoder:
         if not self.generated_code:
             raise ValueError("No code generated. Call generate_code() first.")
         
-        # Ensure project path is set
-        if not self.local_server.current_project_path:
-            self.local_server.current_project_path = self.workspace_dir
-            self.local_server.current_project = "code_project"
+        # Build code package
+        code_package = {
+            "project_name": "code_project",
+            "files": self.generated_code,
+            "entry_point": "main.py"
+        }
         
+        # Receive and save code package
+        self.local_server.receive_code_package(code_package)
+        project_path = self.local_server.save_code_to_directory(code_package)
+        
+        # Build saved files dict
         saved_files = {}
-        
-        for filename, code in self.generated_code.items():
-            filepath = self.local_server.save_file(filename, code)
+        for filename in self.generated_code.keys():
+            filepath = os.path.join(project_path, filename)
             saved_files[filename] = filepath
             self.logger.info(f"Saved {filename} to {filepath}")
         
