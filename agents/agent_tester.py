@@ -193,12 +193,12 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
         if not self.test_file_path or not os.path.exists(self.test_file_path):
             raise ValueError("No test file found. Call generate_test_cases() first.")
         
-        self.logger.info("Executing pytest tests via LocalServer...")
-        
         if not self.local_server.current_project_path:
             raise ValueError("No code package saved. Call receive_code() and generate_test_cases() first.")
         
-        # Use LocalServer to run tests
+        self.logger.info("Executing pytest tests via LocalServer...")
+        
+        # Use LocalServer.run_tests() directly
         test_results = self.local_server.run_tests(
             test_file="test_main.py",
             timeout=Settings.TIMEOUT_SECONDS
