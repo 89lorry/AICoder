@@ -279,17 +279,20 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
                 })
                 
                 self.logger.info(f"Fixed code for {filename}")
+                
+            except Exception as e:
+                self.logger.error(f"Error fixing {filename}: {str(e)}")
+                # Keep original code if fix fails
+        
+        self.fixed_code = fixed_code
         
         # Save all fixed code as a code package (include test file if available)
         if fixed_code:
-            # Include test file from original code package if it exists
+            # Include test file from code package if it exists
             files_to_save = fixed_code.copy()
-            if self.test_results and self.test_results.get("test_file"):
-                test_file_path = self.test_results.get("test_file")
-                if os.path.exists(test_file_path):
-                    test_filename = os.path.basename(test_file_path)
-                    with open(test_file_path, 'r', encoding='utf-8') as f:
-                        files_to_save[test_filename] = f.read()
+            code_package_data = self.code_package.get("code", {})
+            if "test_main.py" in code_package_data:
+                files_to_save["test_main.py"] = code_package_data["test_main.py"]
             
             code_package = {
                 "project_name": "debug_project",
@@ -301,12 +304,7 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
             self.local_server.receive_code_package(code_package)
             project_path = self.local_server.save_code_to_directory(code_package)
             self.logger.info(f"Saved fixed code package to {project_path}")
-                
-            except Exception as e:
-                self.logger.error(f"Error fixing {filename}: {str(e)}")
-                # Keep original code if fix fails
         
-        self.fixed_code = fixed_code
         return fixed_code
     
     def verify_fixes(self) -> Dict[str, Any]:
