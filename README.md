@@ -179,6 +179,55 @@ The system automatically tracks API token usage for each agent. Usage statistics
 - Saved to `api_usage.json` for historical analysis
 - Available through the `APIUsageTracker` class
 
+## Frontend UI (Gradio)
+
+`frontend/ui.py` provides a simple single-page Gradio interface that:
+- Accepts a software description and free-form requirements
+- Runs the existing backend workflow (`backend/mcp_handler.py`)
+- Displays generated application code and test code
+- Shows API usage stats from `backend/api_usage_tracker.py`
+- Supports clearing inputs/outputs
+
+### Run the UI
+
+```bash
+python -m frontend.ui
+```
+
+Open the browser at `http://localhost:8000`.
+
+### Use the real MCP API
+
+Option A: via `.env` (recommended)
+```
+MCP_API_KEY=your_real_key
+MCP_ENDPOINT=your_endpoint_url   # optional if default works
+```
+Then:
+```bash
+python -m frontend.ui
+```
+
+Option B: one-off environment variables
+```bash
+cd /Users/fay/Documents/AICoder
+MCP_API_KEY='your_real_key' python -m frontend.ui
+# Optional custom port / endpoint:
+# GRADIO_SERVER_PORT=7860 MCP_API_KEY='your_real_key' MCP_ENDPOINT='https://your-endpoint' python -m frontend.ui
+```
+
+### Troubleshooting
+- Port 8000 is in use:
+  ```bash
+  lsof -iTCP:8000 -sTCP:LISTEN -n -P
+  kill -9 <PID>
+  ```
+  Or start with a different port using `GRADIO_SERVER_PORT=7860`.
+
+Notes:
+- The UI integrates directly with the existing backend; no new wrappers, tools, or memory logic are introduced.
+- Ensure `MCP_API_KEY` is set; otherwise the backend will raise “MCP API key is not configured.”
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
