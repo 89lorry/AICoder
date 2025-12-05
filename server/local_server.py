@@ -182,7 +182,7 @@ class LocalServer:
             }
             print(f"[LocalServer] ERROR: {str(e)}")
             return self.execution_results
-    
+        
     def run_tests(self, test_file="test_main.py", timeout=300):
         """
         Run pytest tests in the current project directory
@@ -192,7 +192,18 @@ class LocalServer:
             timeout (int): Maximum execution time in seconds (default: 300)
         
         Returns:
-            dict: Test execution results containing stdout, stderr, return_code, etc.
+            dict: Test execution results containing exit_code, passed, stdout, stderr, etc.
+            {
+                "exit_code": 0,  # 0 = passed, non-zero = failed
+                "passed": True,  # Boolean test status
+                "stdout": "pytest output...",
+                "stderr": "error messages...",
+                "output": "combined output",
+                "json_report": {...},  # If plugin available
+                "test_file": "/path/to/test_main.py",
+                "execution_time": 1.23,
+                "timestamp": "2025-12-02T10:40:00"
+            }
         """
         if not self.current_project_path or not os.path.exists(self.current_project_path):
             raise ValueError("Project path not found. Call save_code_to_directory first.")
@@ -200,7 +211,16 @@ class LocalServer:
         test_file_path = os.path.join(self.current_project_path, test_file)
         
         if not os.path.exists(test_file_path):
-            raise FileNotFoundError(f"Test file '{test_file}' not found in project directory")
+            return {
+                "exit_code": -1,
+                "passed": False,
+                "stdout": "",
+                "stderr": f"Test file '{test_file}' not found in project directory",
+                "output": f"Test file '{test_file}' not found in project directory",
+                "error": f"Test file not found: {test_file}",
+                "test_file": test_file_path,
+                "timestamp": datetime.now().isoformat()
+            }
         
         print(f"\n[LocalServer] Running tests: {test_file}")
         print("=" * 60)
@@ -208,14 +228,26 @@ class LocalServer:
         start_time = time.time()
         
         try:
-            # Run pytest with JSON output
+            # Try to run pytest with JSON report plugin first
             result = subprocess.run(
-                ["pytest", test_file, "-v", "--tb=short", "--json-report", "--json-report-file=pytest_report.json"],
+                ["python", "-m", "pytest", test_file, "-v", "--tb=short", 
+                 "--json-report", "--json-report-file=pytest_report.json"],
                 cwd=self.current_project_path,
                 capture_output=True,
                 text=True,
                 timeout=timeout
             )
+            
+            # If pytest-json-report is not installed, fall back to regular pytest
+            if "No module named" in result.stderr and "json_report" in result.stderr:
+                print("[LocalServer] JSON report plugin not available, using standard pytest")
+                result = subprocess.run(
+                    ["python", "-m", "pytest", test_file, "-v", "--tb=short"],
+                    cwd=self.current_project_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout
+                )
             
             execution_time = time.time() - start_time
             
@@ -249,6 +281,7 @@ class LocalServer:
             # Print results
             print(f"[LocalServer] Test execution completed in {execution_time:.2f} seconds")
             print(f"[LocalServer] Return code: {result.returncode}")
+            print(f"[LocalServer] Tests {'PASSED' if result.returncode == 0 else 'FAILED'}")
             
             if result.stdout:
                 print("\n--- STDOUT ---")
@@ -274,6 +307,7 @@ class LocalServer:
                 "success": False,
                 "passed": False,
                 "error": "Test execution timed out",
+                "test_file": test_file_path,
                 "timestamp": datetime.now().isoformat()
             }
             print(f"[LocalServer] ERROR: Test execution timeout after {timeout} seconds")
@@ -291,6 +325,7 @@ class LocalServer:
                 "success": False,
                 "passed": False,
                 "error": str(e),
+                "test_file": test_file_path,
                 "timestamp": datetime.now().isoformat()
             }
             print(f"[LocalServer] ERROR: {str(e)}")
