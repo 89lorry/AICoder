@@ -428,6 +428,95 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
             "files": list(self.fixed_code.keys())
         }
     
+    def generate_regeneration_instructions(self) -> Dict[str, Any]:
+        """
+        Generate instructions for Agent B to regenerate code based on test failures
+        
+        Returns:
+            Dictionary containing regeneration instructions and feedback
+        """
+        if not self.test_analysis or self.test_analysis.get("overall_status") == "passed":
+            return {
+                "needs_regeneration": False,
+                "message": "No regeneration needed - all tests passed"
+            }
+        
+        failure_analysis = self.analyze_failures()
+        
+        prompt = f"""Based on the test failures, provide clear instructions for regenerating the code:
+
+Test Failures:
+{self._format_failures(self.test_analysis.get('failures', []))}
+
+Failure Analysis:
+{failure_analysis}
+
+Current Code Issues:
+{self._format_issues(failure_analysis.get('issues', []))}
+
+Provide JSON with:
+1. "regeneration_instructions": Clear instructions for what needs to be fixed
+2. "key_changes": List of specific changes needed
+3. "priority_fixes": Most critical issues to address first
+4. "architectural_notes": Any architectural changes needed
+"""
+        
+        try:
+            context = {
+                "test_analysis": self.test_analysis,
+                "failure_analysis": failure_analysis,
+                "code_package": self.code_package
+            }
+            
+            if self.langchain_wrapper:
+                response = self.langchain_wrapper.invoke(prompt, context=context)
+                if self.api_usage_tracker:
+                    token_usage = self.langchain_wrapper.get_token_usage()
+                    if token_usage:
+                        self.api_usage_tracker.track_usage("debugger", token_usage)
+            else:
+                if not hasattr(self.mcp_client, 'session') or self.mcp_client.session is None:
+                    self.mcp_client.connect()
+                response = self.mcp_client.send_request(prompt)
+                if self.api_usage_tracker:
+                    token_usage = self.mcp_client.get_token_usage()
+                    if token_usage:
+                        self.api_usage_tracker.track_usage("debugger", token_usage)
+            
+            # Parse response
+            instructions = self._parse_regeneration_instructions(response)
+            instructions["needs_regeneration"] = True
+            instructions["original_architectural_plan"] = self.code_package.get("architectural_plan")
+            
+            self.logger.info("Generated regeneration instructions for Agent B")
+            return instructions
+            
+        except Exception as e:
+            self.logger.error(f"Error generating regeneration instructions: {str(e)}")
+            return {
+                "needs_regeneration": True,
+                "regeneration_instructions": f"Fix test failures: {str(e)}",
+                "key_changes": [],
+                "original_architectural_plan": self.code_package.get("architectural_plan")
+            }
+    
+    def pass_to_coder_for_regeneration(self) -> Dict[str, Any]:
+        """
+        Pass regeneration instructions back to Agent B (Coder)
+        
+        Returns:
+            Dictionary containing instructions for code regeneration
+        """
+        if not self.test_analysis:
+            raise ValueError("No test analysis available. Call receive_code_and_results() first.")
+        
+        if self.test_analysis.get("overall_status") == "passed":
+            self.logger.info("All tests passed - no regeneration needed")
+            return {"needs_regeneration": False}
+        
+        self.logger.info("Passing regeneration instructions to Coder agent")
+        return self.generate_regeneration_instructions()
+    
     def pass_to_server(self) -> Dict[str, Any]:
         """
         Pass final code package to server
@@ -437,6 +526,32 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
         """
         self.logger.info("Passing final code package to server")
         return self.get_final_package()
+    
+    def _parse_regeneration_instructions(self, response: str) -> Dict[str, Any]:
+        """Parse regeneration instructions from MCP response"""
+        import json
+        try:
+            if isinstance(response, dict):
+                return response
+            
+            if '{' in response and '}' in response:
+                start = response.find('{')
+                end = response.rfind('}') + 1
+                json_str = response[start:end]
+                return json.loads(json_str)
+            
+            return {
+                "regeneration_instructions": str(response)[:500],
+                "key_changes": [],
+                "priority_fixes": []
+            }
+        except json.JSONDecodeError:
+            self.logger.warning("Could not parse regeneration instructions JSON")
+            return {
+                "regeneration_instructions": str(response)[:500],
+                "key_changes": [],
+                "priority_fixes": []
+            }
     
     def _format_failures(self, failures: List[Dict[str, str]]) -> str:
         """Format failure information for prompts"""
