@@ -70,6 +70,142 @@ class AgentCoder:
         self.architectural_plan = architectural_plan
         self.logger.info("Received architectural plan from Architect agent")
     
+    def regenerate_code(self, regeneration_instructions: Dict[str, Any]) -> Dict[str, str]:
+        """
+        Regenerate code based on feedback from Agent D (Debugger)
+        
+        Args:
+            regeneration_instructions: Dictionary containing feedback and instructions from debugger
+        
+        Returns:
+            Dictionary mapping filenames to regenerated code content
+        """
+        if not regeneration_instructions.get("needs_regeneration", False):
+            self.logger.info("No regeneration needed")
+            return self.generated_code
+        
+        self.logger.info("Regenerating code based on debugger feedback...")
+        
+        # Get original architectural plan
+        original_plan = regeneration_instructions.get("original_architectural_plan", self.architectural_plan)
+        if not original_plan:
+            raise ValueError("No architectural plan available for regeneration")
+        
+        # Update architectural plan with feedback
+        updated_plan = original_plan.copy()
+        if "architectural_notes" in regeneration_instructions:
+            # Add feedback to the plan
+            if "detailed_plan" not in updated_plan:
+                updated_plan["detailed_plan"] = {}
+            updated_plan["detailed_plan"]["regeneration_feedback"] = regeneration_instructions
+        
+        # Store updated plan
+        self.architectural_plan = updated_plan
+        
+        # Clear previous generated code
+        self.generated_code = {}
+        
+        # Regenerate code with feedback context
+        instructions = regeneration_instructions.get("regeneration_instructions", "")
+        key_changes = regeneration_instructions.get("key_changes", [])
+        
+        # Generate each file with feedback
+        file_structure = updated_plan.get("file_structure", {})
+        files = file_structure.get("files", {})
+        
+        if not files:
+            files = {
+                "main.py": "Main entry point and application logic",
+                "utils.py": "Utility functions and helpers",
+                "test_data.py": "Test data and sample inputs"
+            }
+        
+        for filename, description in files.items():
+            if filename.endswith('.py'):
+                self.logger.info(f"Regenerating code for {filename} with feedback...")
+                code = self._generate_file_code_with_feedback(
+                    filename, 
+                    description, 
+                    instructions,
+                    key_changes
+                )
+                self.generated_code[filename] = code
+        
+        self.logger.info(f"Code regeneration complete. Generated {len(self.generated_code)} files")
+        return self.generated_code
+    
+    def _generate_file_code_with_feedback(self, filename: str, description: str, 
+                                         instructions: str, key_changes: list) -> str:
+        """Generate code for a specific file with feedback from debugger"""
+        file_plan = None
+        detailed_plan = self.architectural_plan.get("detailed_plan", {})
+        file_plans = detailed_plan.get("file_plans", {})
+        
+        if filename in file_plans:
+            file_plan = file_plans[filename]
+        
+        prompt = f"""Regenerate the Python code for the file: {filename}
+
+File Description: {description}
+
+Original Architectural Context:
+{self._format_architectural_context()}
+
+Regeneration Instructions:
+{instructions}
+
+Key Changes Needed:
+{chr(10).join(f'- {change}' for change in key_changes) if key_changes else 'None specified'}
+
+File-Specific Plan:
+{file_plan if file_plan else 'No specific plan provided'}
+
+Requirements:
+- Fix all issues mentioned in the regeneration instructions
+- Address all key changes
+- Write complete, working Python code
+- Include all necessary imports
+- Add docstrings for functions and classes
+- Follow Python best practices (PEP 8)
+- Make the code modular and well-structured
+- Include error handling where appropriate
+- Ensure the code will pass the tests
+
+Generate ONLY the Python code, no markdown formatting, no explanations, just the code itself.
+"""
+        
+        try:
+            context = {
+                "architectural_plan": self.architectural_plan,
+                "file_plan": file_plan,
+                "filename": filename,
+                "description": description,
+                "instructions": instructions,
+                "key_changes": key_changes
+            }
+            
+            if self.langchain_wrapper:
+                response = self.langchain_wrapper.invoke(prompt, context=context)
+                if self.api_usage_tracker:
+                    token_usage = self.langchain_wrapper.get_token_usage()
+                    if token_usage:
+                        self.api_usage_tracker.track_usage("coder", token_usage)
+            else:
+                if not hasattr(self.mcp_client, 'session') or self.mcp_client.session is None:
+                    self.mcp_client.connect()
+                response = self.mcp_client.send_request(prompt)
+                if self.api_usage_tracker:
+                    token_usage = self.mcp_client.get_token_usage()
+                    if token_usage:
+                        self.api_usage_tracker.track_usage("coder", token_usage)
+            
+            code = self._extract_code_from_response(response, filename)
+            return code
+            
+        except Exception as e:
+            self.logger.error(f"Error regenerating code for {filename}: {str(e)}")
+            return f'"""\n{description}\n\n# TODO: Regenerate based on feedback\n'
+    
     def generate_code(self) -> Dict[str, str]:
         """
         Generate code based on architectural plan
