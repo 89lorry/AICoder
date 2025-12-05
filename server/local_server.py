@@ -5,9 +5,9 @@ Runs the written code and manages code packages
 
 import os
 import subprocess
-import shutil
 import time
 from datetime import datetime
+from utils.file_manager import FileManager
 
 
 class LocalServer:
@@ -17,6 +17,7 @@ class LocalServer:
         self.workspace_dir = workspace_dir
         self.current_project = None
         self.current_project_path = None
+        self.file_manager = FileManager()
         self.execution_results = {
             "stdout": "",
             "stderr": "",
@@ -43,7 +44,7 @@ class LocalServer:
             raise ValueError("Code package must be a dictionary")
         
         self.current_project = code_package.get("project_name", f"project_{int(time.time())}")
-        self.current_project_path = os.path.join(self.workspace_dir, self.current_project)
+        self.current_project_path = self.file_manager.join_path(self.workspace_dir, self.current_project)
         
         print(f"[LocalServer] Received code package: {self.current_project}")
         return True
@@ -59,40 +60,58 @@ class LocalServer:
             str: Path to the created project directory
         """
         # Create workspace directory if it doesn't exist
-        os.makedirs(self.workspace_dir, exist_ok=True)
+        self.file_manager.create_directory(self.workspace_dir)
         
-        # Create project directory
-        if os.path.exists(self.current_project_path):
+        # Create project directory (clean first if exists)
+        if self.file_manager.directory_exists(self.current_project_path):
             print(f"[LocalServer] Cleaning existing project directory: {self.current_project_path}")
-            shutil.rmtree(self.current_project_path)
+            self.file_manager.delete_directory(self.current_project_path)
         
-        os.makedirs(self.current_project_path)
+        self.file_manager.create_directory(self.current_project_path)
         print(f"[LocalServer] Created project directory: {self.current_project_path}")
         
-        # Save all code files
+        # Save all code files using FileManager
         files = code_package.get("files", {})
         for filename, content in files.items():
-            filepath = os.path.join(self.current_project_path, filename)
-            
-            # Create subdirectories if needed (only if filename contains path separators)
-            file_dir = os.path.dirname(filepath)
-            if file_dir and file_dir != self.current_project_path:
-                os.makedirs(file_dir, exist_ok=True)
-            
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(content)
-            
+            filepath = self.file_manager.join_path(self.current_project_path, filename)
+            self.file_manager.write_file(filepath, content)
             print(f"[LocalServer] Saved file: {filename}")
         
         # Save requirements.txt if provided
         requirements = code_package.get("requirements", [])
         if requirements:
-            req_path = os.path.join(self.current_project_path, "requirements.txt")
-            with open(req_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(requirements))
+            req_path = self.file_manager.join_path(self.current_project_path, "requirements.txt")
+            req_content = '\n'.join(requirements)
+            self.file_manager.write_file(req_path, req_content)
             print(f"[LocalServer] Saved requirements.txt with {len(requirements)} packages")
         
         return self.current_project_path
+    
+    def save_file(self, filename, content, project_path=None):
+        """
+        Save a single file to the project directory
+        
+        Args:
+            filename (str): Name of the file to save
+            content (str): Content of the file
+            project_path (str, optional): Project path to save to. If None, uses current_project_path
+        
+        Returns:
+            str: Path to the saved file
+        """
+        target_path = project_path or self.current_project_path
+        if not target_path:
+            raise ValueError("No project path available. Call receive_code_package() first or provide project_path.")
+        
+        # Ensure project directory exists
+        self.file_manager.create_directory(target_path)
+        
+        # Save file using FileManager
+        filepath = self.file_manager.join_path(target_path, filename)
+        self.file_manager.write_file(filepath, content)
+        
+        print(f"[LocalServer] Saved file: {filename}")
+        return filepath
     
     def execute_code(self, entry_point="main.py", timeout=30):
         """
@@ -105,12 +124,12 @@ class LocalServer:
         Returns:
             dict: Execution results containing stdout, stderr, return_code, etc.
         """
-        if not self.current_project_path or not os.path.exists(self.current_project_path):
+        if not self.current_project_path or not self.file_manager.directory_exists(self.current_project_path):
             raise ValueError("Project path not found. Call save_code_to_directory first.")
         
-        entry_file = os.path.join(self.current_project_path, entry_point)
+        entry_file = self.file_manager.join_path(self.current_project_path, entry_point)
         
-        if not os.path.exists(entry_file):
+        if not self.file_manager.file_exists(entry_file):
             raise FileNotFoundError(f"Entry point '{entry_point}' not found in project directory")
         
         print(f"\n[LocalServer] Executing: {entry_point}")
@@ -182,154 +201,6 @@ class LocalServer:
             }
             print(f"[LocalServer] ERROR: {str(e)}")
             return self.execution_results
-        
-    def run_tests(self, test_file="test_main.py", timeout=300):
-        """
-        Run pytest tests in the current project directory
-        
-        Args:
-            test_file (str): Test file to run (default: "test_main.py")
-            timeout (int): Maximum execution time in seconds (default: 300)
-        
-        Returns:
-            dict: Test execution results containing exit_code, passed, stdout, stderr, etc.
-            {
-                "exit_code": 0,  # 0 = passed, non-zero = failed
-                "passed": True,  # Boolean test status
-                "stdout": "pytest output...",
-                "stderr": "error messages...",
-                "output": "combined output",
-                "json_report": {...},  # If plugin available
-                "test_file": "/path/to/test_main.py",
-                "execution_time": 1.23,
-                "timestamp": "2025-12-02T10:40:00"
-            }
-        """
-        if not self.current_project_path or not os.path.exists(self.current_project_path):
-            raise ValueError("Project path not found. Call save_code_to_directory first.")
-        
-        test_file_path = os.path.join(self.current_project_path, test_file)
-        
-        if not os.path.exists(test_file_path):
-            return {
-                "exit_code": -1,
-                "passed": False,
-                "stdout": "",
-                "stderr": f"Test file '{test_file}' not found in project directory",
-                "output": f"Test file '{test_file}' not found in project directory",
-                "error": f"Test file not found: {test_file}",
-                "test_file": test_file_path,
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        print(f"\n[LocalServer] Running tests: {test_file}")
-        print("=" * 60)
-        
-        start_time = time.time()
-        
-        try:
-            # Try to run pytest with JSON report plugin first
-            result = subprocess.run(
-                ["python", "-m", "pytest", test_file, "-v", "--tb=short", 
-                 "--json-report", "--json-report-file=pytest_report.json"],
-                cwd=self.current_project_path,
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
-            
-            # If pytest-json-report is not installed, fall back to regular pytest
-            if "No module named" in result.stderr and "json_report" in result.stderr:
-                print("[LocalServer] JSON report plugin not available, using standard pytest")
-                result = subprocess.run(
-                    ["python", "-m", "pytest", test_file, "-v", "--tb=short"],
-                    cwd=self.current_project_path,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout
-                )
-            
-            execution_time = time.time() - start_time
-            
-            # Try to load JSON report if available
-            json_report = None
-            json_report_path = os.path.join(self.current_project_path, "pytest_report.json")
-            if os.path.exists(json_report_path):
-                try:
-                    import json
-                    with open(json_report_path, 'r') as f:
-                        json_report = json.load(f)
-                except Exception as e:
-                    print(f"[LocalServer] Warning: Could not load JSON report: {str(e)}")
-            
-            # Store execution results
-            test_output = result.stdout + result.stderr
-            self.execution_results = {
-                "exit_code": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "output": test_output,
-                "return_code": result.returncode,
-                "execution_time": execution_time,
-                "success": result.returncode == 0,
-                "passed": result.returncode == 0,
-                "json_report": json_report,
-                "test_file": test_file_path,
-                "timestamp": datetime.now().isoformat()
-            }
-            
-            # Print results
-            print(f"[LocalServer] Test execution completed in {execution_time:.2f} seconds")
-            print(f"[LocalServer] Return code: {result.returncode}")
-            print(f"[LocalServer] Tests {'PASSED' if result.returncode == 0 else 'FAILED'}")
-            
-            if result.stdout:
-                print("\n--- STDOUT ---")
-                print(result.stdout)
-            
-            if result.stderr:
-                print("\n--- STDERR ---")
-                print(result.stderr)
-            
-            print("=" * 60)
-            
-            return self.execution_results
-            
-        except subprocess.TimeoutExpired:
-            execution_time = time.time() - start_time
-            self.execution_results = {
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": f"Test execution timeout after {timeout} seconds",
-                "output": f"Test execution timeout after {timeout} seconds",
-                "return_code": -1,
-                "execution_time": execution_time,
-                "success": False,
-                "passed": False,
-                "error": "Test execution timed out",
-                "test_file": test_file_path,
-                "timestamp": datetime.now().isoformat()
-            }
-            print(f"[LocalServer] ERROR: Test execution timeout after {timeout} seconds")
-            return self.execution_results
-            
-        except Exception as e:
-            execution_time = time.time() - start_time
-            self.execution_results = {
-                "exit_code": -1,
-                "stdout": "",
-                "stderr": str(e),
-                "output": str(e),
-                "return_code": -1,
-                "execution_time": execution_time,
-                "success": False,
-                "passed": False,
-                "error": str(e),
-                "test_file": test_file_path,
-                "timestamp": datetime.now().isoformat()
-            }
-            print(f"[LocalServer] ERROR: {str(e)}")
-            return self.execution_results
     
     def run_tests(self, test_file="test_main.py", timeout=300):
         """
@@ -341,24 +212,13 @@ class LocalServer:
         
         Returns:
             dict: Test execution results containing exit_code, passed, stdout, stderr, etc.
-            {
-                "exit_code": 0,  # 0 = passed, non-zero = failed
-                "passed": True,  # Boolean test status
-                "stdout": "pytest output...",
-                "stderr": "error messages...",
-                "output": "combined output",
-                "json_report": {...},  # If plugin available
-                "test_file": "/path/to/test_main.py",
-                "execution_time": 1.23,
-                "timestamp": "2025-12-02T10:40:00"
-            }
         """
-        if not self.current_project_path or not os.path.exists(self.current_project_path):
+        if not self.current_project_path or not self.file_manager.directory_exists(self.current_project_path):
             raise ValueError("Project path not found. Call save_code_to_directory first.")
         
-        test_file_path = os.path.join(self.current_project_path, test_file)
+        test_file_path = self.file_manager.join_path(self.current_project_path, test_file)
         
-        if not os.path.exists(test_file_path):
+        if not self.file_manager.file_exists(test_file_path):
             return {
                 "exit_code": -1,
                 "passed": False,
@@ -401,12 +261,10 @@ class LocalServer:
             
             # Try to load JSON report if available
             json_report = None
-            json_report_path = os.path.join(self.current_project_path, "pytest_report.json")
-            if os.path.exists(json_report_path):
+            json_report_path = self.file_manager.join_path(self.current_project_path, "pytest_report.json")
+            if self.file_manager.file_exists(json_report_path):
                 try:
-                    import json
-                    with open(json_report_path, 'r') as f:
-                        json_report = json.load(f)
+                    json_report = self.file_manager.load_json(json_report_path)
                 except Exception as e:
                     print(f"[LocalServer] Warning: Could not load JSON report: {str(e)}")
             
@@ -495,19 +353,14 @@ class LocalServer:
         Returns:
             dict: Package containing code files and execution results
         """
-        if not self.current_project_path or not os.path.exists(self.current_project_path):
+        if not self.current_project_path or not self.file_manager.directory_exists(self.current_project_path):
             return None
         
-        # Read all files from the project directory
-        code_files = {}
-        for root, dirs, files in os.walk(self.current_project_path):
-            for filename in files:
-                if filename.endswith('.py') or filename == 'requirements.txt':
-                    filepath = os.path.join(root, filename)
-                    relative_path = os.path.relpath(filepath, self.current_project_path)
-                    
-                    with open(filepath, 'r', encoding='utf-8') as f:
-                        code_files[relative_path] = f.read()
+        # Read all Python and requirements files using FileManager
+        code_files = self.file_manager.read_directory_files(
+            self.current_project_path,
+            extensions=['.py', 'requirements.txt']
+        )
         
         return {
             "project_name": self.current_project,
@@ -518,23 +371,14 @@ class LocalServer:
     
     def cleanup_workspace(self):
         """Clean up workspace directory"""
-        if self.current_project_path and os.path.exists(self.current_project_path):
-            shutil.rmtree(self.current_project_path)
+        if self.current_project_path and self.file_manager.directory_exists(self.current_project_path):
+            self.file_manager.delete_directory(self.current_project_path)
             print(f"[LocalServer] Cleaned up workspace: {self.current_project_path}")
             self.current_project = None
             self.current_project_path = None
 
 
 # Example usage and testing
-# You can test it anytime by running: python server/local_server.py
-
-# from server.local_server import LocalServer
-
-# server = LocalServer(workspace_dir="./workspace")
-# server.receive_code_package(code_package)
-# server.save_code_to_directory(code_package)
-# results = server.execute_code(entry_point="main.py")
-# ui_package = server.return_code_to_ui()
 if __name__ == "__main__":
     print("=" * 60)
     print("Local Server - Hello World Example")
@@ -545,42 +389,42 @@ if __name__ == "__main__":
         "project_name": "hello_world_example",
         "files": {
             "main.py": '''"""
-                        Hello World Example
-                        """
+Hello World Example
+"""
 
-                        def main():
-                            print("Hello World!")
-                            print("This is a simple example of generated code.")
-                            print("The code is running in an isolated workspace.")
-                            
-                            # Some basic calculations
-                            result = 2 + 2
-                            print(f"2 + 2 = {result}")
-                            
-                            # A simple loop
-                            print("\\nCounting to 5:")
-                            for i in range(1, 6):
-                                print(f"  {i}")
-                            
-                            print("\\nExecution completed successfully!")
+def main():
+    print("Hello World!")
+    print("This is a simple example of generated code.")
+    print("The code is running in an isolated workspace.")
+    
+    # Some basic calculations
+    result = 2 + 2
+    print(f"2 + 2 = {result}")
+    
+    # A simple loop
+    print("\\nCounting to 5:")
+    for i in range(1, 6):
+        print(f"  {i}")
+    
+    print("\\nExecution completed successfully!")
 
-                        if __name__ == "__main__":
-                            main()
-                        ''',
+if __name__ == "__main__":
+    main()
+''',
             "utils.py": '''"""
-                        Utility functions
-                        """
+Utility functions
+"""
 
-                        def greet(name):
-                            """Return a greeting message"""
-                            return f"Hello, {name}!"
+def greet(name):
+    """Return a greeting message"""
+    return f"Hello, {name}!"
 
-                        def add(a, b):
-                            """Add two numbers"""
-                            return a + b
-                        '''
+def add(a, b):
+    """Add two numbers"""
+    return a + b
+'''
         },
-        "requirements": [],  # No external requirements for this simple example
+        "requirements": [],
         "entry_point": "main.py"
     }
     

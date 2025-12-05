@@ -3,14 +3,26 @@ Utils Package
 Contains utility modules for the multi-agent system
 """
 
-from .mcp_client import MCPClient
+# Import FileManager (no external dependencies)
 from .file_manager import FileManager
-from .memory_manager import MemoryManager
-from .langchain_wrapper import LangChainWrapper
 
-__all__ = [
-    'MCPClient',
-    'FileManager',
-    'MemoryManager',
-    'LangChainWrapper'
-]
+# Import other modules with error handling for optional dependencies
+__all__ = ['FileManager']
+
+try:
+    from .mcp_client import MCPClient
+    __all__.append('MCPClient')
+except ImportError:
+    pass
+
+try:
+    from .memory_manager import MemoryManager
+    __all__.append('MemoryManager')
+except ImportError:
+    pass
+
+try:
+    from .langchain_wrapper import LangChainWrapper
+    __all__.append('LangChainWrapper')
+except ImportError:
+    pass
