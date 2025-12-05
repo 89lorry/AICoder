@@ -8,6 +8,8 @@ pytest-cov>=4.1.0
 langchain>=0.1.0
 langchain-core>=0.1.0
 langchain-community>=0.0.20
+langchain-openai>=0.1.0
+langchain-anthropic>=0.1.0
 
 # LLM providers (adjust based on your MCP provider)
 openai>=1.0.0
@@ -15,7 +17,8 @@ anthropic>=0.7.0
 
 # Memory backends
 chromadb>=0.4.0
-faiss-cpu>=1.7.4
+# faiss-cpu is difficult to build on macOS; only install on Linux by default
+faiss-cpu>=1.7.4; platform_system == "Linux"
 
 # MCP Protocol
 # Note: Add specific MCP SDK when available
@@ -23,6 +26,7 @@ faiss-cpu>=1.7.4
 
 # Web framework (if needed for UI)
 flask>=2.3.0
+gradio>=4.0.0
 requests>=2.31.0
 
 # Utilities
