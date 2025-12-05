@@ -5,12 +5,19 @@ Implements the feedback loop: B → C → D → B → C → D ... until tests pa
 
 from typing import Dict, Any, Optional
 import logging
+import time
 
 
 class WorkflowOrchestrator:
     """Orchestrates the agent workflow with feedback loop"""
     
-    def __init__(self, architect, coder, tester, debugger, max_iterations=5):
+    # Gemini 2.5 Flash Free Tier Rate Limits
+    # 15 requests per minute (RPM) = 4 seconds between requests minimum
+    # 1 million tokens per minute (TPM)
+    # 1,500 requests per day (RPD)
+    REQUEST_DELAY = 5.0  # 5 seconds between requests (safer than 4 seconds)
+    
+    def __init__(self, architect, coder, tester, debugger, max_iterations=5, enable_rate_limiting=True):
         """
         Initialize workflow orchestrator
         
@@ -20,13 +27,32 @@ class WorkflowOrchestrator:
             tester: AgentTester instance
             debugger: AgentDebugger instance
             max_iterations: Maximum number of feedback loop iterations
+            enable_rate_limiting: Whether to enable rate limiting (default: True)
         """
         self.architect = architect
         self.coder = coder
         self.tester = tester
         self.debugger = debugger
         self.max_iterations = max_iterations
+        self.enable_rate_limiting = enable_rate_limiting
         self.logger = logging.getLogger(__name__)
+        self.last_request_time = 0
+        
+        if self.enable_rate_limiting:
+            self.logger.info(f"Rate limiting enabled: {self.REQUEST_DELAY}s delay between API calls")
+    
+    def _wait_for_rate_limit(self):
+        """Wait if necessary to respect rate limits"""
+        if not self.enable_rate_limiting:
+            return
+        
+        time_since_last_request = time.time() - self.last_request_time
+        if time_since_last_request < self.REQUEST_DELAY:
+            wait_time = self.REQUEST_DELAY - time_since_last_request
+            self.logger.info(f"⏱️  Rate limit: waiting {wait_time:.1f}s before next API call...")
+            time.sleep(wait_time)
+        
+        self.last_request_time = time.time()
     
     def run_complete_workflow(self, requirements: str) -> Dict[str, Any]:
         """
@@ -44,8 +70,13 @@ class WorkflowOrchestrator:
         
         # Step 1: Architect
         self.logger.info("\n[Step 1] Architect: Analyzing requirements...")
+        self._wait_for_rate_limit()
         analysis = self.architect.analyze_requirements(requirements)
+        
+        self._wait_for_rate_limit()
         file_structure = self.architect.design_file_structure(analysis)
+        
+        self._wait_for_rate_limit()
         architectural_plan = self.architect.create_architectural_plan(analysis, file_structure)
         
         # Initialize feedback loop
@@ -68,9 +99,11 @@ class WorkflowOrchestrator:
                 if iteration == 1:
                     self.logger.info("\n[Step 2] Coder: Generating initial code...")
                     self.coder.receive_architecture(architectural_plan)
+                    self._wait_for_rate_limit()
                     code = self.coder.generate_code()
                 else:
                     self.logger.info(f"\n[Step 2] Coder: Regenerating code (iteration {iteration})...")
+                    self._wait_for_rate_limit()
                     code = self.coder.regenerate_code(regeneration_instructions)
                 
                 # Save code files (side effect: saves to LocalServer)
@@ -84,6 +117,7 @@ class WorkflowOrchestrator:
                 self.logger.info("\n[Step 3] Tester: Testing code...")
                 self.tester.receive_code(code_package)
                 # Generate test cases (side effect: saves test file to LocalServer)
+                self._wait_for_rate_limit()
                 test_code = self.tester.generate_test_cases()
                 iteration_result["test_file_generated"] = True
                 iteration_result["test_file_path"] = self.tester.test_file_path
@@ -111,6 +145,7 @@ class WorkflowOrchestrator:
                 self.debugger.receive_code_and_results(test_package)
                 
                 # Generate regeneration instructions
+                self._wait_for_rate_limit()
                 regeneration_instructions = self.debugger.pass_to_coder_for_regeneration()
                 iteration_result["regeneration_instructions"] = regeneration_instructions
                 iteration_result["status"] = "needs_regeneration"
@@ -148,4 +183,3 @@ class WorkflowOrchestrator:
         self.logger.info(f"{'=' * 60}")
         
         return result
-

@@ -63,7 +63,7 @@ class APIUsageTracker:
     def track_usage(
         self,
         agent_name: str,
-        tokens_used: int,
+        tokens_used: Any,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """
@@ -71,21 +71,30 @@ class APIUsageTracker:
         
         Args:
             agent_name: Name of the agent making the request.
-            tokens_used: Number of tokens consumed.
+            tokens_used: Number of tokens consumed (int or dict with token info).
             metadata: Optional contextual information (request id, prompt size, etc.).
         """
         if not self.enabled:
             return None
         
-        if tokens_used is None:
-            tokens_used = 0
+        # Handle both dictionary and integer inputs
+        if isinstance(tokens_used, dict):
+            # Extract total_tokens from dictionary
+            tokens_count = tokens_used.get("total_tokens", 0)
+            # Store the full dict as metadata if not provided
+            if metadata is None:
+                metadata = tokens_used
+        elif tokens_used is None:
+            tokens_count = 0
+        else:
+            tokens_count = int(tokens_used)
         
-        if tokens_used < 0:
+        if tokens_count < 0:
             raise ValueError("tokens_used must be a non-negative integer")
         
         entry = {
             "agent": agent_name or "unknown",
-            "tokens": int(tokens_used),
+            "tokens": int(tokens_count),
             "timestamp": datetime.utcnow().isoformat(),
             "metadata": metadata or {},
         }
