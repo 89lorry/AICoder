@@ -6,11 +6,28 @@ Integrates LangChain with MCP client for agent interactions
 import os
 import logging
 from typing import Optional, Dict, Any, List
-from langchain.chains import LLMChain
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.language_models import BaseLanguageModel
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
+
+# Try to import langchain components
+try:
+    from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+    from langchain_core.language_models import BaseLanguageModel
+    from langchain_openai import ChatOpenAI
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    ChatPromptTemplate = None
+    MessagesPlaceholder = None
+    BaseLanguageModel = None
+    ChatOpenAI = None
+
+# Try to import anthropic
+try:
+    from langchain_anthropic import ChatAnthropic
+    ANTHROPIC_AVAILABLE = True
+except ImportError:
+    ANTHROPIC_AVAILABLE = False
+    ChatAnthropic = None
+
 from utils.memory_manager import MemoryManager
 from config.settings import Settings
 
@@ -75,37 +92,9 @@ class LangChainWrapper:
             self.logger.info("No LLM available, will use MCP client directly")
             return
         
-        try:
-            # Build prompt template with memory
-            prompt_messages = []
-            
-            if self.memory_manager:
-                # Add memory placeholder
-                prompt_messages.append(MessagesPlaceholder(variable_name="chat_history"))
-            
-            prompt_messages.append(("human", "{input}"))
-            
-            prompt = ChatPromptTemplate.from_messages(prompt_messages)
-            
-            # Create chain
-            if self.memory_manager and self.memory_manager.memory:
-                self.chain = LLMChain(
-                    llm=self.llm,
-                    prompt=prompt,
-                    memory=self.memory_manager.memory,
-                    verbose=False
-                )
-            else:
-                self.chain = LLMChain(
-                    llm=self.llm,
-                    prompt=prompt,
-                    verbose=False
-                )
-            
-            self.logger.info("Initialized LangChain chain")
-        
-        except Exception as e:
-            self.logger.warning(f"Failed to initialize chain: {str(e)}")
+        # With newer LangChain, we can use the LLM directly without chains
+        self.chain = self.llm
+        self.logger.info("Initialized LangChain LLM (direct mode)")
     
     def invoke(self, prompt: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
@@ -195,4 +184,3 @@ class LangChainWrapper:
         if hasattr(self.mcp_client, 'get_token_usage'):
             return self.mcp_client.get_token_usage()
         return None
-

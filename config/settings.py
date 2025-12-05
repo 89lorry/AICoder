@@ -4,6 +4,20 @@ Configuration settings for the MCP multi-agent system
 """
 
 import os
+from pathlib import Path
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Get the project root directory (parent of config directory)
+    root_dir = Path(__file__).parent.parent
+    env_path = root_dir / '.env'
+    load_dotenv(dotenv_path=env_path)
+    print(f"[Settings] Loaded environment from {env_path}")
+except ImportError:
+    print("[Settings] python-dotenv not installed, using system environment variables only")
+except Exception as e:
+    print(f"[Settings] Error loading .env file: {e}")
 
 
 class Settings:

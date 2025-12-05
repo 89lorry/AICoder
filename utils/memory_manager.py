@@ -6,10 +6,19 @@ Manages LangChain memory for agents with conversation history
 import logging
 import os
 from typing import Optional, Dict, Any
-from langchain.memory import ConversationBufferMemory, ConversationBufferWindowMemory
-from langchain.memory import ConversationSummaryMemory, ConversationSummaryBufferMemory
-from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+
+# Try to import from langchain_community first (newer versions)
+try:
+    from langchain_community.chat_message_histories import ChatMessageHistory
+    from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+    LANGCHAIN_AVAILABLE = True
+except ImportError:
+    LANGCHAIN_AVAILABLE = False
+    HumanMessage = None
+    AIMessage = None
+    SystemMessage = None
+    ChatMessageHistory = None
+
 from config.settings import Settings
 
 
@@ -40,48 +49,16 @@ class MemoryManager:
             self.logger.info(f"Memory disabled for {self.agent_name}")
             return
         
-        try:
-            if self.memory_type == "buffer":
-                self.memory = ConversationBufferMemory(
-                    memory_key="chat_history",
-                    return_messages=True
-                )
-                self.logger.info(f"Initialized buffer memory for {self.agent_name}")
-            
-            elif self.memory_type == "buffer_window":
-                # Keep last 10 interactions
-                self.memory = ConversationBufferWindowMemory(
-                    memory_key="chat_history",
-                    return_messages=True,
-                    k=10
-                )
-                self.logger.info(f"Initialized buffer window memory for {self.agent_name}")
-            
-            elif self.memory_type == "summary" and self.llm:
-                self.memory = ConversationSummaryMemory(
-                    llm=self.llm,
-                    memory_key="chat_history",
-                    return_messages=True
-                )
-                self.logger.info(f"Initialized summary memory for {self.agent_name}")
-            
-            elif self.memory_type == "summary_buffer" and self.llm:
-                self.memory = ConversationSummaryBufferMemory(
-                    llm=self.llm,
-                    memory_key="chat_history",
-                    return_messages=True,
-                    max_token_limit=Settings.MAX_MEMORY_TOKENS
-                )
-                self.logger.info(f"Initialized summary buffer memory for {self.agent_name}")
-            
-            else:
-                # Default to buffer memory
-                self.memory = ConversationBufferMemory(
-                    memory_key="chat_history",
-                    return_messages=True
-                )
-                self.logger.info(f"Initialized default buffer memory for {self.agent_name}")
+        if not LANGCHAIN_AVAILABLE:
+            self.logger.warning(f"LangChain not available, using simple memory for {self.agent_name}")
+            # Use simple list-based memory
+            self.memory = {"chat_history": []}
+            return
         
+        try:
+            # For now, use simple dict-based memory since langchain.memory module structure changed
+            self.memory = {"chat_history": []}
+            self.logger.info(f"Initialized simple memory for {self.agent_name}")
         except Exception as e:
             self.logger.warning(f"Failed to initialize memory for {self.agent_name}: {str(e)}")
             self.memory = None
@@ -92,10 +69,18 @@ class MemoryManager:
             return
         
         try:
-            self.memory.save_context(
-                {"input": input_str},
-                {"output": output_str}
-            )
+            if isinstance(self.memory, dict):
+                # Simple dict-based memory
+                self.memory["chat_history"].append({
+                    "input": input_str,
+                    "output": output_str
+                })
+            else:
+                # LangChain memory object
+                self.memory.save_context(
+                    {"input": input_str},
+                    {"output": output_str}
+                )
             self.logger.debug(f"Saved context to memory for {self.agent_name}")
         except Exception as e:
             self.logger.warning(f"Failed to save context: {str(e)}")
@@ -106,7 +91,10 @@ class MemoryManager:
             return {"chat_history": []}
         
         try:
-            return self.memory.load_memory_variables({})
+            if isinstance(self.memory, dict):
+                return self.memory
+            else:
+                return self.memory.load_memory_variables({})
         except Exception as e:
             self.logger.warning(f"Failed to load memory variables: {str(e)}")
             return {"chat_history": []}

@@ -95,9 +95,12 @@ Provide a JSON response with:
                     token_usage = self.mcp_client.get_token_usage()
                     if token_usage:
                         self.api_usage_tracker.track_usage("architect", token_usage)
+                
+                # Extract text from response
+                response_text = self.mcp_client.extract_text_from_response(response)
             
             # Parse response
-            analysis = self._parse_analysis(response)
+            analysis = self._parse_analysis(response_text)
             self.logger.info(f"Requirements analyzed. Components: {len(analysis.get('components', []))}")
             
             return analysis

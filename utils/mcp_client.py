@@ -94,25 +94,62 @@ class MCPClient:
         if self.session is None:
             self.connect()
         
-        payload = self._build_payload(
-            prompt=prompt,
-            context=context,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            extra_params=extra_params,
-        )
-        self.last_request = payload
+        # Check if using Google Gemini API
+        is_gemini = "generativelanguage.googleapis.com" in self.endpoint
         
-        response = self.session.post(
-            self.endpoint,
-            data=json.dumps(payload),
-            timeout=self.timeout,
-        )
+        if is_gemini:
+            # Use Gemini format
+            endpoint_with_key = f"{self.endpoint}?key={self.api_key}"
+            payload = self._build_gemini_payload(
+                prompt=prompt,
+                context=context,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            self.last_request = payload
+            
+            # Remove Authorization header for Gemini (uses query param instead)
+            headers = {"Content-Type": "application/json"}
+            response = requests.post(
+                endpoint_with_key,
+                data=json.dumps(payload),
+                headers=headers,
+                timeout=self.timeout,
+            )
+        else:
+            # Use OpenAI-style format
+            payload = self._build_payload(
+                prompt=prompt,
+                context=context,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                extra_params=extra_params,
+            )
+            self.last_request = payload
+            
+            response = self.session.post(
+                self.endpoint,
+                data=json.dumps(payload),
+                timeout=self.timeout,
+            )
+        
         response.raise_for_status()
         
         data = response.json()
         self.last_response = data
-        self.last_token_usage = data.get("usage")
+        
+        # Extract token usage based on provider
+        if is_gemini:
+            # Gemini uses usageMetadata
+            usage_meta = data.get("usageMetadata", {})
+            self.last_token_usage = {
+                "prompt_tokens": usage_meta.get("promptTokenCount", 0),
+                "completion_tokens": usage_meta.get("candidatesTokenCount", 0),
+                "total_tokens": usage_meta.get("totalTokenCount", 0),
+            }
+        else:
+            self.last_token_usage = data.get("usage")
+        
         logger.debug("MCP request completed successfully.")
         return data
     
@@ -137,7 +174,7 @@ class MCPClient:
         max_tokens: Optional[int],
         extra_params: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """Construct payload compatible with OpenAI/Gemini style APIs."""
+        """Construct payload compatible with OpenAI style APIs."""
         system_prompt = (
             context
             or "You are an MCP-enabled software engineering assistant that returns JSON-friendly responses."
@@ -162,3 +199,57 @@ class MCPClient:
             payload.pop("model", None)
         
         return payload
+    
+    def _build_gemini_payload(
+        self,
+        *,
+        prompt: str,
+        context: Optional[str],
+        temperature: float,
+        max_tokens: Optional[int],
+    ) -> Dict[str, Any]:
+        """Construct payload for Google Gemini API."""
+        # Combine context and prompt
+        full_prompt = prompt
+        if context:
+            full_prompt = f"{context}\n\n{prompt}"
+        
+        payload: Dict[str, Any] = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": full_prompt}
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": temperature,
+            }
+        }
+        
+        if max_tokens is not None:
+            payload["generationConfig"]["maxOutputTokens"] = max_tokens
+        
+        return payload
+    
+    def extract_text_from_response(self, response: Dict[str, Any]) -> str:
+        """Extract text from API response, handling both OpenAI and Gemini formats."""
+        # Check if Gemini format
+        if "candidates" in response:
+            # Gemini format
+            try:
+                return response["candidates"][0]["content"]["parts"][0]["text"]
+            except (KeyError, IndexError) as e:
+                logger.warning(f"Failed to extract text from Gemini response: {e}")
+                return str(response)
+        
+        # OpenAI format
+        elif "choices" in response:
+            try:
+                return response["choices"][0]["message"]["content"]
+            except (KeyError, IndexError) as e:
+                logger.warning(f"Failed to extract text from OpenAI response: {e}")
+                return str(response)
+        
+        # Unknown format, return as string
+        return str(response)
