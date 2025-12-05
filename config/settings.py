@@ -32,3 +32,9 @@ class Settings:
     # API Usage Tracking
     TRACK_API_USAGE = True
     USAGE_LOG_FILE = "api_usage.json"
+    
+    # LangChain Configuration
+    MEMORY_BACKEND = os.getenv("MEMORY_BACKEND", "buffer")  # buffer, conversation_buffer, or vector
+    MEMORY_DIR = os.getenv("MEMORY_DIR", "./memory")
+    ENABLE_MEMORY = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
+    MAX_MEMORY_TOKENS = int(os.getenv("MAX_MEMORY_TOKENS", "4000"))
