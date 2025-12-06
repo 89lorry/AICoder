@@ -77,12 +77,21 @@ class AgentArchitect:
 Requirements:
 {requirements}
 
+🚨 ABSOLUTE REQUIREMENT 🚨
+- EXACTLY 3 components. NO MORE, NO LESS.
+- If you suggest 4+ components, the system WILL FAIL.
+- Keep it SIMPLE - merge related functionality into single components.
+- Avoid over-engineering at ALL costs.
+- Focus ONLY on core requirements.
+
 Provide a JSON response with:
-1. "components": List of main components/modules needed
+1. "components": List of EXACTLY 3 main components/modules
 2. "dependencies": List of external dependencies (libraries, frameworks)
 3. "architecture_type": Type of architecture (CLI, API, GUI, etc.)
 4. "complexity": Estimated complexity level (simple, medium, complex)
 5. "summary": Brief summary of what the software should do
+
+Remember: EXACTLY 3 components. This is MANDATORY for system success.
 """
         
         try:
@@ -142,18 +151,26 @@ Provide a JSON response with:
 Architecture Analysis:
 {analysis}
 
-Design a file structure that includes at minimum:
-- main.py: Main entry point and application logic
-- utils.py: Utility functions and helpers
-- test_data.py: Test data and sample inputs
+Design a file structure that follows these CRITICAL rules:
+1. main.py: Contains ALL core classes and application logic (single source of truth)
+2. utils.py: ONLY contains helper functions that import from main.py if needed
+3. test_data.py: ONLY contains sample data and test fixtures that import classes from main.py
+
+IMPORTANT FILE COORDINATION:
+- ALL class definitions (Contact, ContactBook, ValidationUtils, etc.) must be in main.py
+- utils.py should NOT duplicate any classes - it should import from main.py if needed
+- test_data.py should NOT duplicate any classes - it must import from main.py
+- Avoid code duplication across files
+- Each class should be defined in exactly ONE place (main.py)
 
 Provide a JSON response with:
 1. "files": Dictionary mapping filename to brief description of contents
 2. "file_structure": Hierarchical structure if directories are needed
-3. "imports": Dictionary showing what imports each file will need
+3. "imports": Dictionary showing what imports each file will need (e.g., "test_data.py": ["from main import Contact, ContactBook"])
 4. "entry_point": Which file is the entry point (typically main.py)
+5. "class_definitions": Dictionary mapping each class name to the file where it should be defined (all should be "main.py")
 
-Be specific about what functions, classes, and logic should go in each file.
+Be specific about what functions, classes, and logic should go in each file. Remember: NO duplicate class definitions!
 """
         
         try:

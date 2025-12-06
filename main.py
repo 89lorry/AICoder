@@ -248,19 +248,15 @@ def main():
     print("=" * 60)
     
     try:
-        # Sample requirements
+        # Simple user requirements - Architect will expand these into detailed specs
         requirements = """
-Create a simple calculator program in Python that can:
-1. Add two numbers
-2. Subtract two numbers
-3. Multiply two numbers
-4. Divide two numbers (with zero division handling)
+I need a contact management system where I can:
+- Save people's names, email addresses, and phone numbers
+- Search for contacts by name
+- See all my contacts in alphabetical order
+- Remove contacts I don't need anymore
 
-The program should have:
-- A Calculator class with the four basic operations
-- Proper error handling for division by zero
-- A main function that demonstrates all operations
-- Clean, well-documented code
+Make sure emails and phone numbers are valid before saving them.
 """
         
         print("\n📋 Requirements:")
@@ -330,8 +326,17 @@ The program should have:
                 code_package = result['final_code_package']
                 files = code_package.get('files', {})
                 print(f"\n📁 Generated Files ({len(files)}):")
-                for filename in files.keys():
-                    print(f"   - {filename}")
+                
+                # Handle both dict and list formats
+                if isinstance(files, dict):
+                    for filename in files:  # More Pythonic, no need for .keys()
+                        print(f"   - {filename}")
+                elif isinstance(files, list):
+                    for filename in files:
+                        print(f"   - {filename}")
+                else:
+                    # Handle unexpected format
+                    print(f"   (Unexpected format: {type(files)})")
         else:
             print("\n⚠️  Workflow completed but tests did not pass")
             print(f"Completed {result['total_iterations']} iterations")

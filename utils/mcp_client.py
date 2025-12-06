@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class MCPClient:
     """Client for interacting with MCP services."""
     
-    DEFAULT_TIMEOUT = 30
+    DEFAULT_TIMEOUT = 60  # Increased from 30 to 60 seconds to handle complex requests
     
     def __init__(
         self,

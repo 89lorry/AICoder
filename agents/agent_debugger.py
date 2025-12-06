@@ -73,6 +73,122 @@ class AgentDebugger:
         self.fixed_code = {}
         self.max_fix_iterations = 3
         self.current_iteration = 0
+        self.max_retries = 3  # Maximum retries for API timeouts
+    
+    def validate_code(self, code: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Validate generated code for common issues before testing
+        
+        Args:
+            code: Dictionary mapping filenames to code content
+            
+        Returns:
+            Dictionary containing validation results
+        """
+        import ast
+        import re
+        
+        validation_results = {
+            "valid": True,
+            "issues": [],
+            "warnings": []
+        }
+        
+        for filename, content in code.items():
+            if not filename.endswith('.py'):
+                continue
+            
+            # Check 1: Syntax validation
+            try:
+                ast.parse(content)
+            except SyntaxError as e:
+                validation_results["valid"] = False
+                validation_results["issues"].append({
+                    "file": filename,
+                    "type": "syntax_error",
+                    "message": f"Syntax error at line {e.lineno}: {e.msg}",
+                    "severity": "critical"
+                })
+                continue  # Skip other checks if syntax is invalid
+            
+            # Check 2: Detect infinite loops (basic heuristic)
+            # Look for 'while True:' without break/return within reasonable lines
+            while_true_pattern = r'while\s+True\s*:'
+            if re.search(while_true_pattern, content):
+                # Check if there's a break or return nearby
+                lines = content.split('\n')
+                for i, line in enumerate(lines):
+                    if re.search(while_true_pattern, line):
+                        # Check next 20 lines for break/return
+                        has_exit = False
+                        for j in range(i + 1, min(i + 20, len(lines))):
+                            if re.search(r'\b(break|return)\b', lines[j]):
+                                has_exit = True
+                                break
+                        if not has_exit:
+                            validation_results["warnings"].append({
+                                "file": filename,
+                                "type": "potential_infinite_loop",
+                                "message": f"Line {i+1}: 'while True:' without visible break/return",
+                                "severity": "high"
+                            })
+            
+            # Check 3: Blocking input() calls
+            if re.search(r'\binput\s*\(', content):
+                validation_results["warnings"].append({
+                    "file": filename,
+                    "type": "blocking_input",
+                    "message": "Code contains input() which may block execution",
+                    "severity": "medium"
+                })
+            
+            # Check 4: Infinite recursion risk (basic)
+            # Look for functions that call themselves without obvious base case
+            try:
+                tree = ast.parse(content)
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.FunctionDef):
+                        func_name = node.name
+                        # Check if function calls itself
+                        for subnode in ast.walk(node):
+                            if isinstance(subnode, ast.Call):
+                                if isinstance(subnode.func, ast.Name) and subnode.func.id == func_name:
+                                    # Check if there's an if statement (base case)
+                                    has_if = any(isinstance(n, ast.If) for n in ast.walk(node))
+                                    if not has_if:
+                                        validation_results["warnings"].append({
+                                            "file": filename,
+                                            "type": "potential_infinite_recursion",
+                                            "message": f"Function '{func_name}' appears recursive without obvious base case",
+                                            "severity": "high"
+                                        })
+            except:
+                pass  # AST parsing already validated above
+            
+            # Check 5: Network/socket operations that might block
+            blocking_patterns = [
+                (r'socket\.connect', 'socket.connect() may block'),
+                (r'requests\.get|requests\.post', 'HTTP requests without timeout may block'),
+                (r'urllib\.request', 'urllib requests without timeout may block'),
+                (r'time\.sleep\(\s*\d{3,}', 'Long sleep() duration detected')
+            ]
+            
+            for pattern, message in blocking_patterns:
+                if re.search(pattern, content):
+                    validation_results["warnings"].append({
+                        "file": filename,
+                        "type": "potential_blocking_operation",
+                        "message": message,
+                        "severity": "medium"
+                    })
+        
+        # Overall validation status
+        if validation_results["issues"]:
+            validation_results["valid"] = False
+        
+        self.logger.info(f"Code validation: {len(validation_results['issues'])} errors, {len(validation_results['warnings'])} warnings")
+        
+        return validation_results
     
     def receive_code_and_results(self, package: Dict[str, Any]) -> None:
         """
@@ -128,6 +244,23 @@ Original Code:
 
 Test Output:
 {self.test_results.get('output', '')[:2000] if self.test_results else 'N/A'}
+
+⚠️ CRITICAL JSON OUTPUT REQUIREMENTS (READ CAREFULLY):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. NO MARKDOWN CODE BLOCKS - Do NOT use ```json or ``` or any backticks
+2. NO EXPLANATORY TEXT - Do NOT include any text before or after the JSON
+3. START WITH {{ - Your response MUST begin with the opening curly brace
+4. END WITH }} - Your response MUST end with the closing curly brace
+5. PURE JSON ONLY - If you include ANY non-JSON characters, the system will FAIL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WRONG (will cause system failure):
+```json
+{{"issues": []}}
+```
+
+CORRECT (this is what you must do):
+{{"issues": [], "fix_priority": [], "summary": "..."}}
 
 Provide a JSON analysis with:
 1. "issues": List of identified issues, each with:
@@ -614,36 +747,92 @@ Provide JSON with:
         return "\n".join(formatted)
     
     def _parse_failure_analysis(self, response: str) -> Dict[str, Any]:
-        """Parse failure analysis from MCP response"""
+        """Parse failure analysis from MCP response with robust markdown stripping"""
         import json
+        import re
+        
         try:
             if isinstance(response, dict):
                 return response
             
-            if '{' in response and '}' in response:
-                start = response.find('{')
-                end = response.rfind('}') + 1
-                json_str = response[start:end]
-                return json.loads(json_str)
+            # Strip markdown code blocks if present
+            response_clean = response.strip()
+            
+            # Remove ```json ... ``` blocks
+            if '```json' in response_clean or '```' in response_clean:
+                self.logger.warning("Detected markdown formatting in response - stripping it")
+                # Remove ```json at start
+                response_clean = re.sub(r'^```(?:json)?\s*\n?', '', response_clean)
+                # Remove ``` at end
+                response_clean = re.sub(r'\n?```\s*$', '', response_clean)
+            
+            # Extract JSON
+            if '{' in response_clean and '}' in response_clean:
+                start = response_clean.find('{')
+                end = response_clean.rfind('}') + 1
+                json_str = response_clean[start:end]
+                
+                # Try to parse
+                parsed = json.loads(json_str)
+                
+                # Validate required fields
+                if not isinstance(parsed.get('issues'), list):
+                    self.logger.warning("Invalid JSON structure: 'issues' is not a list")
+                    parsed['issues'] = []
+                
+                if 'summary' not in parsed:
+                    parsed['summary'] = "No summary provided"
+                
+                # Set has_failures based on issues count
+                if 'has_failures' not in parsed:
+                    parsed['has_failures'] = len(parsed.get('issues', [])) > 0
+                
+                self.logger.info(f"Successfully parsed failure analysis with {len(parsed.get('issues', []))} issues")
+                return parsed
             
             # Fallback: extract issues from text
+            self.logger.warning("No JSON structure found in response, creating fallback analysis")
             return {
                 "has_failures": True,
                 "issues": [{
                     "file": "unknown.py",
                     "location": "unknown",
-                    "problem": str(response)[:200],
-                    "root_cause": "Unknown",
-                    "severity": "medium"
+                    "problem": str(response_clean)[:200],
+                    "root_cause": "Could not parse AI response",
+                    "severity": "high"
                 }],
-                "summary": str(response)[:500]
+                "fix_priority": ["unknown.py"],
+                "summary": f"Failed to parse AI response. Raw response: {str(response_clean)[:500]}"
             }
-        except json.JSONDecodeError:
-            self.logger.warning("Could not parse failure analysis JSON, using fallback")
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(f"JSON decode error: {str(e)}")
+            self.logger.error(f"Attempted to parse: {response[:200]}...")
             return {
                 "has_failures": True,
-                "issues": [],
-                "summary": str(response)[:500]
+                "issues": [{
+                    "file": "unknown.py",
+                    "location": "JSON parsing",
+                    "problem": f"Failed to parse AI response as JSON: {str(e)}",
+                    "root_cause": "AI returned invalid JSON or markdown-wrapped response",
+                    "severity": "critical"
+                }],
+                "fix_priority": ["unknown.py"],
+                "summary": f"JSON parsing failed: {str(e)}"
+            }
+        except Exception as e:
+            self.logger.error(f"Unexpected error parsing failure analysis: {str(e)}")
+            return {
+                "has_failures": True,
+                "issues": [{
+                    "file": "unknown.py",
+                    "location": "parsing",
+                    "problem": f"Unexpected error: {str(e)}",
+                    "root_cause": "System error during parsing",
+                    "severity": "critical"
+                }],
+                "fix_priority": ["unknown.py"],
+                "summary": f"System error: {str(e)}"
             }
     
     def _extract_code_from_response(self, response: str) -> str:
@@ -662,3 +851,41 @@ Provide JSON with:
                 return response[start:end].strip()
         
         return response.strip()
+    
+    def _retry_with_timeout(self, func, *args, **kwargs):
+        """
+        Retry a function call with exponential backoff for timeout errors
+        
+        Args:
+            func: Function to call
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+            
+        Returns:
+            Result from successful function call
+            
+        Raises:
+            Exception: If all retries fail
+        """
+        import time
+        from requests.exceptions import Timeout, ReadTimeout
+        
+        last_exception = None
+        for attempt in range(self.max_retries):
+            try:
+                return func(*args, **kwargs)
+            except (Timeout, ReadTimeout) as e:
+                last_exception = e
+                if attempt < self.max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    self.logger.warning(f"Timeout on attempt {attempt + 1}/{self.max_retries}. Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                else:
+                    self.logger.error(f"All {self.max_retries} attempts failed due to timeout")
+            except Exception as e:
+                # For non-timeout errors, don't retry
+                self.logger.error(f"Non-timeout error occurred: {str(e)}")
+                raise
+        
+        # If we get here, all retries failed
+        raise last_exception

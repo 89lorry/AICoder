@@ -169,18 +169,49 @@ Key Changes Needed:
 File-Specific Plan:
 {file_plan if file_plan else 'No specific plan provided'}
 
+CRITICAL FILE COORDINATION RULES:
+1. If this is main.py: Include ALL core class definitions (Contact, ContactBook, ValidationUtils, etc.)
+   - ALL classes must be defined here
+   - This is the single source of truth
+   - Use robust validation (regex for email, proper phone validation)
+   - Implement proper error handling and return types
+
+2. If this is utils.py: ONLY helper functions, NO class definitions
+   - Import classes from main.py if needed: "from main import Contact, ContactBook"
+   - Only add utility functions that don't duplicate main.py
+   - Keep it minimal or even empty if not needed
+
+3. If this is test_data.py: ONLY sample data, NO class definitions
+   - Import classes DIRECTLY from "main" (the filename is main.py):
+     CORRECT: from main import Contact, ContactBook, ValidationUtils
+     WRONG: from contact_management_system import Contact
+     WRONG: from project_name import Contact
+   - DO NOT create hypothetical module names based on project description
+   - Use ONLY the actual filename: "main" (without .py extension)
+   - The main code file is ALWAYS named "main.py" in this structure
+   - Create sample data instances using the imported classes
+   - NO duplicate class definitions
+
 Requirements:
 - Fix all issues mentioned in the regeneration instructions
 - Address all key changes
 - Write complete, working Python code
 - Include all necessary imports
-- Add docstrings for functions and classes
+- Add comprehensive docstrings for functions and classes
 - Follow Python best practices (PEP 8)
 - Make the code modular and well-structured
-- Include error handling where appropriate
+- Include proper error handling where appropriate
 - Ensure the code will pass the tests
 - If this is main.py: DO NOT include 'if __name__ == "__main__":' block that calls main() - tests will import and call functions directly
 - If this includes a main() function: Keep it as a regular function without the if __name__ guard
+
+VALIDATION BEST PRACTICES (for main.py):
+- Email validation: Use regex pattern like r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+- Phone validation: Accept 10 digits, use regex r'^\d{10}$'
+- Return boolean values (True/False) not None from validation methods
+- ContactBook.remove_contact should return bool (True on success, False if not found), not raise exceptions
+- ContactBook.contact_exists should be case-insensitive
+- ContactBook.add_contact should include type checking
 
 CRITICAL: Your response must contain ONLY raw Python code. 
 DO NOT wrap the code in markdown code blocks (```python or ```).
@@ -341,6 +372,24 @@ Start your response directly with the first line of Python code (imports or docs
         if not self.generated_code:
             raise ValueError("No code generated. Call generate_code() first.")
         
+        # Validate code before passing to tester (requires debugger's validation method)
+        try:
+            from agents.agent_debugger import AgentDebugger
+            temp_debugger = AgentDebugger(self.mcp_client, workspace_dir=self.workspace_dir, enable_memory=False)
+            validation_results = temp_debugger.validate_code(self.generated_code)
+            
+            if validation_results.get("issues"):
+                self.logger.warning(f"Code validation found {len(validation_results['issues'])} issues:")
+                for issue in validation_results['issues']:
+                    self.logger.warning(f"  - {issue['file']}: {issue['message']}")
+            
+            if validation_results.get("warnings"):
+                self.logger.warning(f"Code validation found {len(validation_results['warnings'])} warnings:")
+                for warning in validation_results['warnings']:
+                    self.logger.warning(f"  - {warning['file']}: {warning['message']}")
+        except Exception as e:
+            self.logger.warning(f"Could not validate code: {str(e)}")
+        
         self.logger.info("Passing code package to Tester agent")
         return self.get_code_package()
     
@@ -370,16 +419,47 @@ Architectural Context:
 File-Specific Plan:
 {file_plan if file_plan else 'No specific plan provided'}
 
-Requirements:
+CRITICAL FILE COORDINATION RULES:
+1. If this is main.py: Include ALL core class definitions (Contact, ContactBook, ValidationUtils, etc.)
+   - ALL classes must be defined here
+   - This is the single source of truth
+   - Use robust validation (regex for email, proper phone validation)
+   - Implement proper error handling and return types
+
+2. If this is utils.py: ONLY helper functions, NO class definitions
+   - Import classes from main.py if needed: "from main import Contact, ContactBook"
+   - Only add utility functions that don't duplicate main.py
+   - Keep it minimal or even empty if not needed
+
+3. If this is test_data.py: ONLY sample data, NO class definitions
+   - Import classes DIRECTLY from "main" (the filename is main.py):
+     CORRECT: from main import Contact, ContactBook, ValidationUtils
+     WRONG: from contact_management_system import Contact
+     WRONG: from project_name import Contact
+   - DO NOT create hypothetical module names based on project description
+   - Use ONLY the actual filename: "main" (without .py extension)
+   - The main code file is ALWAYS named "main.py" in this structure
+   - Create sample data instances using the imported classes
+   - NO duplicate class definitions
+
+General Requirements:
 - Write complete, working Python code
 - Include all necessary imports
-- Add docstrings for functions and classes
+- Add comprehensive docstrings for functions and classes
 - Follow Python best practices (PEP 8)
 - Make the code modular and well-structured
-- Include error handling where appropriate
+- Include proper error handling where appropriate
 - Ensure the code is ready to be executed
 - If this is main.py: DO NOT include 'if __name__ == "__main__":' block that calls main() - tests will import and call functions directly
 - If this includes a main() function: Keep it as a regular function without the if __name__ guard
+
+VALIDATION BEST PRACTICES (for main.py):
+- Email validation: Use regex pattern like r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+- Phone validation: Accept 10 digits, consider using regex r'^\d{10}$'
+- Return boolean values (True/False) not None from validation methods
+- ContactBook.remove_contact should return bool (True on success, False if not found), not raise exceptions
+- ContactBook.contact_exists should be case-insensitive
+- ContactBook.add_contact should include type checking
 
 CRITICAL: Your response must contain ONLY raw Python code. 
 DO NOT wrap the code in markdown code blocks (```python or ```).

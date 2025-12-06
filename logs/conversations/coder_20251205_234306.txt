@@ -1,0 +1,737 @@
+================================================================================
+Conversation Log: CODER
+Session ID: 20251205_234306
+Started: 2025-12-05 23:43:06
+================================================================================
+
+
+────────────────────────────────────────────────────────────────────────────────
+Timestamp: 2025-12-05 23:43:34
+Metadata: {'prompt_tokens': 858, 'completion_tokens': 3240, 'total_tokens': 4098}
+
+[PROMPT]
+--------------------------------------------------------------------------------
+Generate complete, executable Python code for the file: main.py
+
+File Description: Main entry point and application logic
+
+Architectural Context:
+Requirements: 
+I need a contact management system where I can:
+- Save people's names, email addresses, and phone numbers
+- Search for contacts by name
+- See all my contacts in alphabetical order
+- Remove contacts I don't need anymore
+
+Make sure emails and phone numbers are valid before saving them.
+
+Components: [{'name': 'ContactManager', 'description': 'Handles all core contact management operations: saving, searching, listing, and removing contacts. It also includes validation logic for email and phone numbers.'}, {'name': 'DataStorage', 'description': 'Responsible for persisting and retrieving contact data. This component abstracts the underlying storage mechanism (e.g., file, database).'}, {'name': 'UserInterface', 'description': 'Provides the means for the user to interact with the system. This could be a command-line interface, a graphical user interface, or a web interface.'}]
+Architecture Type: CLI
+File Structure: {}
+
+File-Specific Plan:
+No specific plan provided
+
+CRITICAL FILE COORDINATION RULES:
+1. If this is main.py: Include ALL core class definitions (Contact, ContactBook, ValidationUtils, etc.)
+   - ALL classes must be defined here
+   - This is the single source of truth
+   - Use robust validation (regex for email, proper phone validation)
+   - Implement proper error handling and return types
+
+2. If this is utils.py: ONLY helper functions, NO class definitions
+   - Import classes from main.py if needed: "from main import Contact, ContactBook"
+   - Only add utility functions that don't duplicate main.py
+   - Keep it minimal or even empty if not needed
+
+3. If this is test_data.py: ONLY sample data, NO class definitions
+   - Import classes DIRECTLY from "main" (the filename is main.py):
+     CORRECT: from main import Contact, ContactBook, ValidationUtils
+     WRONG: from contact_management_system import Contact
+     WRONG: from project_name import Contact
+   - DO NOT create hypothetical module names based on project description
+   - Use ONLY the actual filename: "main" (without .py extension)
+   - The main code file is ALWAYS named "main.py" in this structure
+   - Create sample data instances using the imported classes
+   - NO duplicate class definitions
+
+General Requirements:
+- Write complete, working Python code
+- Include all necessary imports
+- Add comprehensive docstrings for functions and classes
+- Follow Python best practices (PEP 8)
+- Make the code modular and well-structured
+- Include proper error handling where appropriate
+- Ensure the code is ready to be executed
+- If this is main.py: DO NOT include 'if __name__ == "__main__":' block that calls main() - tests will import and call functions directly
+- If this includes a main() function: Keep it as a regular function without the if __name__ guard
+
+VALIDATION BEST PRACTICES (for main.py):
+- Email validation: Use regex pattern like r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z](2,)$'
+- Phone validation: Accept 10 digits, consider using regex r'^\d10$'
+- Return boolean values (True/False) not None from validation methods
+- ContactBook.remove_contact should return bool (True on success, False if not found), not raise exceptions
+- ContactBook.contact_exists should be case-insensitive
+- ContactBook.add_contact should include type checking
+
+CRITICAL: Your response must contain ONLY raw Python code. 
+DO NOT wrap the code in markdown code blocks (```python or ```).
+DO NOT include any explanations, comments outside the code, or formatting.
+Start your response directly with the first line of Python code (imports or docstrings).
+
+
+[RESPONSE]
+--------------------------------------------------------------------------------
+import re
+import json
+from typing import List, Optional, Dict, Any
+
+class Contact:
+    """Represents a single contact with name, email, and phone number."""
+
+    def __init__(self, name: str, email: str, phone: str):
+        """
+        Initializes a Contact object.
+
+        Args:
+            name: The name of the contact.
+            email: The email address of the contact.
+            phone: The phone number of the contact.
+
+        Raises:
+            ValueError: If name, email, or phone are invalid.
+        """
+        if not name:
+            raise ValueError("Contact name cannot be empty.")
+        if not ValidationUtils.is_valid_email(email):
+            raise ValueError(f"Invalid email format: {email}")
+        if not ValidationUtils.is_valid_phone(phone):
+            raise ValueError(f"Invalid phone number format: {phone}")
+
+        self.name = name
+        self.email = email
+        self.phone = phone
+
+    def __str__(self) -> str:
+        """Returns a string representation of the contact."""
+        return f"Name: {self.name}, Email: {self.email}, Phone: {self.phone}"
+
+    def __repr__(self) -> str:
+        """Returns a developer-friendly string representation of the contact."""
+        return f"Contact(name='{self.name}', email='{self.email}', phone='{self.phone}')"
+
+    def to_dict(self) -> Dict[str, str]:
+        """Converts the contact object to a dictionary."""
+        return {"name": self.name, "email": self.email, "phone": self.phone}
+
+    @staticmethod
+    def from_dict(data: Dict[str, str]) -> 'Contact':
+        """Creates a Contact object from a dictionary."""
+        return Contact(data["name"], data["email"], data["phone"])
+
+class ValidationUtils:
+    """Utility class for validating contact information."""
+
+    EMAIL_REGEX = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    PHONE_REGEX = r'^\d{10}$'
+
+    @staticmethod
+    def is_valid_email(email: str) -> bool:
+        """
+        Validates if the provided string is a valid email address.
+
+        Args:
+            email: The string to validate as an email.
+
+        Returns:
+            True if the email is valid, False otherwise.
+        """
+        if not isinstance(email, str):
+            return False
+        return re.match(ValidationUtils.EMAIL_REGEX, email) is not None
+
+    @staticmethod
+    def is_valid_phone(phone: str) -> bool:
+        """
+        Validates if the provided string is a valid 10-digit phone number.
+
+        Args:
+            phone: The string to validate as a phone number.
+
+        Returns:
+            True if the phone number is valid, False otherwise.
+        """
+        if not isinstance(phone, str):
+            return False
+        return re.match(ValidationUtils.PHONE_REGEX, phone) is not None
+
+class DataStorage:
+    """Handles persistence and retrieval of contact data."""
+
+    def __init__(self, filepath: str = "contacts.json"):
+        """
+        Initializes DataStorage.
+
+        Args:
+            filepath: The path to the JSON file where contacts are stored.
+        """
+        self.filepath = filepath
+        self.contacts_data: List[Dict[str, str]] = self._load_contacts()
+
+    def _load_contacts(self) -> List[Dict[str, str]]:
+        """Loads contacts from the JSON file."""
+        try:
+            with open(self.filepath, 'r') as f:
+                data = json.load(f)
+                if not isinstance(data, list):
+                    return []
+                return data
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def _save_contacts(self) -> None:
+        """Saves current contacts to the JSON file."""
+        with open(self.filepath, 'w') as f:
+            json.dump(self.contacts_data, f, indent=4)
+
+    def get_all_contacts_data(self) -> List[Dict[str, str]]:
+        """Retrieves all contact data as a list of dictionaries."""
+        return self.contacts_data
+
+    def add_contact_data(self, contact_data: Dict[str, str]) -> None:
+        """Adds a new contact's data to the storage."""
+        self.contacts_data.append(contact_data)
+        self._save_contacts()
+
+    def remove_contact_data(self, contact_name: str) -> bool:
+        """
+        Removes a contact by name from storage.
+
+        Args:
+            contact_name: The name of the contact to remove.
+
+        Returns:
+            True if the contact was found and removed, False otherwise.
+        """
+        initial_length = len(self.contacts_data)
+        self.contacts_data = [
+            contact for contact in self.contacts_data
+            if contact.get("name", "").lower() != contact_name.lower()
+        ]
+        if len(self.contacts_data) < initial_length:
+            self._save_contacts()
+            return True
+        return False
+
+    def find_contact_data_by_name(self, name: str) -> Optional[Dict[str, str]]:
+        """
+        Finds a contact's data by name (case-insensitive).
+
+        Args:
+            name: The name of the contact to find.
+
+        Returns:
+            A dictionary representing the contact if found, None otherwise.
+        """
+        for contact_data in self.contacts_data:
+            if contact_data.get("name", "").lower() == name.lower():
+                return contact_data
+        return None
+
+class ContactManager:
+    """
+    Handles all core contact management operations: saving, searching,
+    listing, and removing contacts. It also includes validation logic
+    for email and phone numbers.
+    """
+
+    def __init__(self, data_storage: DataStorage):
+        """
+        Initializes ContactManager.
+
+        Args:
+            data_storage: An instance of DataStorage for data persistence.
+        """
+        self.data_storage = data_storage
+        self.contacts: Dict[str, Contact] = {}
+        self._load_contacts_from_storage()
+
+    def _load_contacts_from_storage(self) -> None:
+        """Loads contacts from the data storage and populates the internal dictionary."""
+        for contact_data in self.data_storage.get_all_contacts_data():
+            try:
+                contact = Contact.from_dict(contact_data)
+                self.contacts[contact.name.lower()] = contact
+            except ValueError:
+                # Silently ignore invalid data from storage during load
+                pass
+
+    def add_contact(self, name: str, email: str, phone: str) -> bool:
+        """
+        Adds a new contact to the system.
+
+        Args:
+            name: The name of the contact.
+            email: The email address of the contact.
+            phone: The phone number of the contact.
+
+        Returns:
+            True if the contact was added successfully, False otherwise
+            (e.g., if validation fails or contact already exists).
+        """
+        if not name or not email or not phone:
+            print("Error: Name, email, and phone cannot be empty.")
+            return False
+
+        if not ValidationUtils.is_valid_email(email):
+            print(f"Error: Invalid email format: {email}")
+            return False
+        if not ValidationUtils.is_valid_phone(phone):
+            print(f"Error: Invalid phone number format: {phone}")
+            return False
+
+        if self.contact_exists(name):
+            print(f"Error: Contact with name '{name}' already exists.")
+            return False
+
+        try:
+            new_contact = Contact(name, email, phone)
+            self.contacts[new_contact.name.lower()] = new_contact
+            self.data_storage.add_contact_data(new_contact.to_dict())
+            print(f"Contact '{name}' added successfully.")
+            return True
+        except ValueError as e:
+            print(f"Error adding contact: {e}")
+            return False
+
+    def search_contact(self, name: str) -> Optional[Contact]:
+        """
+        Searches for a contact by name (case-insensitive).
+
+        Args:
+            name: The name of the contact to search for.
+
+        Returns:
+            The Contact object if found, None otherwise.
+        """
+        return self.contacts.get(name.lower())
+
+    def list_contacts(self) -> List[Contact]:
+        """
+        Retrieves all contacts in alphabetical order by name.
+
+        Returns:
+            A list of Contact objects, sorted alphabetically by name.
+        """
+        return sorted(self.contacts.values(), key=lambda contact: contact.name)
+
+    def remove_contact(self, name: str) -> bool:
+        """
+        Removes a contact by name (case-insensitive).
+
+        Args:
+            name: The name of the contact to remove.
+
+        Returns:
+            True if the contact was found and removed, False otherwise.
+        """
+        if name.lower() in self.contacts:
+            del self.contacts[name.lower()]
+            if self.data_storage.remove_contact_data(name):
+                print(f"Contact '{name}' removed successfully.")
+                return True
+            else:
+                # This case should ideally not happen if self.contacts was updated
+                print(f"Error: Contact '{name}' removed from memory but not from storage.")
+                return False
+        else:
+            print(f"Error: Contact '{name}' not found.")
+            return False
+
+    def contact_exists(self, name: str) -> bool:
+        """
+        Checks if a contact with the given name already exists (case-insensitive).
+
+        Args:
+            name: The name to check.
+
+        Returns:
+            True if a contact with that name exists, False otherwise.
+        """
+        return name.lower() in self.contacts
+
+class UserInterface:
+    """Provides the command-line interface for the contact management system."""
+
+    def __init__(self, contact_manager: ContactManager):
+        """
+        Initializes UserInterface.
+
+        Args:
+            contact_manager: An instance of ContactManager.
+        """
+        self.contact_manager = contact_manager
+
+    def display_menu(self) -> None:
+        """Displays the main menu options to the user."""
+        print("\n--- Contact Management System ---")
+        print("1. Add Contact")
+        print("2. Search Contact")
+        print("3. List All Contacts")
+        print("4. Remove Contact")
+        print("5. Exit")
+        print("---------------------------------")
+
+    def get_user_input(self, prompt: str) -> str:
+        """Gets input from the user with a given prompt."""
+        return input(prompt).strip()
+
+    def add_contact_ui(self) -> None:
+        """Handles the user interaction for adding a contact."""
+        print("\n--- Add New Contact ---")
+        name = self.get_user_input("Enter Name: ")
+        email = self.get_user_input("Enter Email: ")
+        phone = self.get_user_input("Enter Phone (10 digits): ")
+
+        if not name or not email or not phone:
+            print("Error: All fields (Name, Email, Phone) are required.")
+            return
+
+        self.contact_manager.add_contact(name, email, phone)
+
+    def search_contact_ui(self) -> None:
+        """Handles the user interaction for searching a contact."""
+        print("\n--- Search Contact ---")
+        name = self.get_user_input("Enter Name to search: ")
+        if not name:
+            print("Error: Name cannot be empty for search.")
+            return
+
+        contact = self.contact_manager.search_contact(name)
+        if contact:
+            print("\nContact Found:")
+            print(contact)
+        else:
+            print(f"Contact '{name}' not found.")
+
+    def list_contacts_ui(self) -> None:
+        """Handles the user interaction for listing all contacts."""
+        print("\n--- All Contacts ---")
+        contacts = self.contact_manager.list_contacts()
+        if not contacts:
+            print("No contacts available.")
+            return
+
+        for contact in contacts:
+            print(contact)
+
+    def remove_contact_ui(self) -> None:
+        """Handles the user interaction for removing a contact."""
+        print("\n--- Remove Contact ---")
+        name = self.get_user_input("Enter Name of contact to remove: ")
+        if not name:
+            print("Error: Name cannot be empty for removal.")
+            return
+
+        self.contact_manager.remove_contact(name)
+
+    def run(self) -> None:
+        """Starts and runs the main application loop."""
+        while True:
+            self.display_menu()
+            choice = self.get_user_input("Enter your choice (1-5): ")
+
+            if choice == '1':
+                self.add_contact_ui()
+            elif choice == '2':
+                self.search_contact_ui()
+            elif choice == '3':
+                self.list_contacts_ui()
+            elif choice == '4':
+                self.remove_contact_ui()
+            elif choice == '5':
+                print("Exiting Contact Management System. Goodbye!")
+                break
+            else:
+                print("Invalid choice. Please enter a number between 1 and 5.")
+
+def main() -> None:
+    """Main function to set up and run the contact management system."""
+    data_storage = DataStorage()
+    contact_manager = ContactManager(data_storage)
+    ui = UserInterface(contact_manager)
+    ui.run()
+
+if __name__ == "__main__":
+    main()
+
+────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────
+Timestamp: 2025-12-05 23:43:35
+Metadata: {'prompt_tokens': 856, 'completion_tokens': 234, 'total_tokens': 1090}
+
+[PROMPT]
+--------------------------------------------------------------------------------
+Generate complete, executable Python code for the file: utils.py
+
+File Description: Utility functions and helpers
+
+Architectural Context:
+Requirements: 
+I need a contact management system where I can:
+- Save people's names, email addresses, and phone numbers
+- Search for contacts by name
+- See all my contacts in alphabetical order
+- Remove contacts I don't need anymore
+
+Make sure emails and phone numbers are valid before saving them.
+
+Components: [{'name': 'ContactManager', 'description': 'Handles all core contact management operations: saving, searching, listing, and removing contacts. It also includes validation logic for email and phone numbers.'}, {'name': 'DataStorage', 'description': 'Responsible for persisting and retrieving contact data. This component abstracts the underlying storage mechanism (e.g., file, database).'}, {'name': 'UserInterface', 'description': 'Provides the means for the user to interact with the system. This could be a command-line interface, a graphical user interface, or a web interface.'}]
+Architecture Type: CLI
+File Structure: {}
+
+File-Specific Plan:
+No specific plan provided
+
+CRITICAL FILE COORDINATION RULES:
+1. If this is main.py: Include ALL core class definitions (Contact, ContactBook, ValidationUtils, etc.)
+   - ALL classes must be defined here
+   - This is the single source of truth
+   - Use robust validation (regex for email, proper phone validation)
+   - Implement proper error handling and return types
+
+2. If this is utils.py: ONLY helper functions, NO class definitions
+   - Import classes from main.py if needed: "from main import Contact, ContactBook"
+   - Only add utility functions that don't duplicate main.py
+   - Keep it minimal or even empty if not needed
+
+3. If this is test_data.py: ONLY sample data, NO class definitions
+   - Import classes DIRECTLY from "main" (the filename is main.py):
+     CORRECT: from main import Contact, ContactBook, ValidationUtils
+     WRONG: from contact_management_system import Contact
+     WRONG: from project_name import Contact
+   - DO NOT create hypothetical module names based on project description
+   - Use ONLY the actual filename: "main" (without .py extension)
+   - The main code file is ALWAYS named "main.py" in this structure
+   - Create sample data instances using the imported classes
+   - NO duplicate class definitions
+
+General Requirements:
+- Write complete, working Python code
+- Include all necessary imports
+- Add comprehensive docstrings for functions and classes
+- Follow Python best practices (PEP 8)
+- Make the code modular and well-structured
+- Include proper error handling where appropriate
+- Ensure the code is ready to be executed
+- If this is main.py: DO NOT include 'if __name__ == "__main__":' block that calls main() - tests will import and call functions directly
+- If this includes a main() function: Keep it as a regular function without the if __name__ guard
+
+VALIDATION BEST PRACTICES (for main.py):
+- Email validation: Use regex pattern like r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z](2,)$'
+- Phone validation: Accept 10 digits, consider using regex r'^\d10$'
+- Return boolean values (True/False) not None from validation methods
+- ContactBook.remove_contact should return bool (True on success, False if not found), not raise exceptions
+- ContactBook.contact_exists should be case-insensitive
+- ContactBook.add_contact should include type checking
+
+CRITICAL: Your response must contain ONLY raw Python code. 
+DO NOT wrap the code in markdown code blocks (```python or ```).
+DO NOT include any explanations, comments outside the code, or formatting.
+Start your response directly with the first line of Python code (imports or docstrings).
+
+
+[RESPONSE]
+--------------------------------------------------------------------------------
+# utils.py
+
+import re
+
+def is_valid_email(email: str) -> bool:
+    """
+    Validates an email address using a regular expression.
+
+    Args:
+        email: The email address string to validate.
+
+    Returns:
+        True if the email is valid, False otherwise.
+    """
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(email_regex, email) is not None
+
+def is_valid_phone_number(phone: str) -> bool:
+    """
+    Validates a phone number, expecting exactly 10 digits.
+
+    Args:
+        phone: The phone number string to validate.
+
+    Returns:
+        True if the phone number is valid (10 digits), False otherwise.
+    """
+    phone_regex = r'^\d{10}$'
+    return re.match(phone_regex, phone) is not None
+
+────────────────────────────────────────────────────────────────────────────────
+
+────────────────────────────────────────────────────────────────────────────────
+Timestamp: 2025-12-05 23:43:39
+Metadata: {'prompt_tokens': 859, 'completion_tokens': 1083, 'total_tokens': 1942}
+
+[PROMPT]
+--------------------------------------------------------------------------------
+Generate complete, executable Python code for the file: test_data.py
+
+File Description: Test data and sample inputs
+
+Architectural Context:
+Requirements: 
+I need a contact management system where I can:
+- Save people's names, email addresses, and phone numbers
+- Search for contacts by name
+- See all my contacts in alphabetical order
+- Remove contacts I don't need anymore
+
+Make sure emails and phone numbers are valid before saving them.
+
+Components: [{'name': 'ContactManager', 'description': 'Handles all core contact management operations: saving, searching, listing, and removing contacts. It also includes validation logic for email and phone numbers.'}, {'name': 'DataStorage', 'description': 'Responsible for persisting and retrieving contact data. This component abstracts the underlying storage mechanism (e.g., file, database).'}, {'name': 'UserInterface', 'description': 'Provides the means for the user to interact with the system. This could be a command-line interface, a graphical user interface, or a web interface.'}]
+Architecture Type: CLI
+File Structure: {}
+
+File-Specific Plan:
+No specific plan provided
+
+CRITICAL FILE COORDINATION RULES:
+1. If this is main.py: Include ALL core class definitions (Contact, ContactBook, ValidationUtils, etc.)
+   - ALL classes must be defined here
+   - This is the single source of truth
+   - Use robust validation (regex for email, proper phone validation)
+   - Implement proper error handling and return types
+
+2. If this is utils.py: ONLY helper functions, NO class definitions
+   - Import classes from main.py if needed: "from main import Contact, ContactBook"
+   - Only add utility functions that don't duplicate main.py
+   - Keep it minimal or even empty if not needed
+
+3. If this is test_data.py: ONLY sample data, NO class definitions
+   - Import classes DIRECTLY from "main" (the filename is main.py):
+     CORRECT: from main import Contact, ContactBook, ValidationUtils
+     WRONG: from contact_management_system import Contact
+     WRONG: from project_name import Contact
+   - DO NOT create hypothetical module names based on project description
+   - Use ONLY the actual filename: "main" (without .py extension)
+   - The main code file is ALWAYS named "main.py" in this structure
+   - Create sample data instances using the imported classes
+   - NO duplicate class definitions
+
+General Requirements:
+- Write complete, working Python code
+- Include all necessary imports
+- Add comprehensive docstrings for functions and classes
+- Follow Python best practices (PEP 8)
+- Make the code modular and well-structured
+- Include proper error handling where appropriate
+- Ensure the code is ready to be executed
+- If this is main.py: DO NOT include 'if __name__ == "__main__":' block that calls main() - tests will import and call functions directly
+- If this includes a main() function: Keep it as a regular function without the if __name__ guard
+
+VALIDATION BEST PRACTICES (for main.py):
+- Email validation: Use regex pattern like r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z](2,)$'
+- Phone validation: Accept 10 digits, consider using regex r'^\d10$'
+- Return boolean values (True/False) not None from validation methods
+- ContactBook.remove_contact should return bool (True on success, False if not found), not raise exceptions
+- ContactBook.contact_exists should be case-insensitive
+- ContactBook.add_contact should include type checking
+
+CRITICAL: Your response must contain ONLY raw Python code. 
+DO NOT wrap the code in markdown code blocks (```python or ```).
+DO NOT include any explanations, comments outside the code, or formatting.
+Start your response directly with the first line of Python code (imports or docstrings).
+
+
+[RESPONSE]
+--------------------------------------------------------------------------------
+from main import Contact, ContactBook, ValidationUtils
+
+# Sample valid contacts
+valid_contacts_data = [
+    {"name": "Alice Wonderland", "email": "alice.w@example.com", "phone": "1234567890"},
+    {"name": "Bob The Builder", "email": "bob.builder@company.net", "phone": "0987654321"},
+    {"name": "Charlie Chaplin", "email": "charlie.c@movies.org", "phone": "5551234567"},
+    {"name": "Diana Prince", "email": "diana.p@themyscira.gov", "phone": "1112223333"},
+    {"name": "Ethan Hunt", "email": "ethan.h@imf.gov", "phone": "9998887777"},
+]
+
+# Sample invalid contacts
+invalid_contacts_data = [
+    {"name": "Invalid Email", "email": "invalid-email", "phone": "1234567890"},
+    {"name": "Invalid Phone", "email": "valid.email@example.com", "phone": "123"},
+    {"name": "Missing Email", "phone": "1234567890"},
+    {"name": "Missing Phone", "email": "valid.email@example.com"},
+    {"name": "Empty Name", "email": "empty.name@example.com", "phone": "1234567890"},
+    {"name": "Invalid Email Format", "email": "user@domain", "phone": "1234567890"},
+    {"name": "Invalid Phone Format", "email": "user@domain.com", "phone": "123-456-7890"},
+]
+
+# Sample data for testing search functionality
+search_contacts_data = [
+    {"name": "Alice Smith", "email": "alice.s@example.com", "phone": "1111111111"},
+    {"name": "Bob Johnson", "email": "bob.j@example.com", "phone": "2222222222"},
+    {"name": "Alice Williams", "email": "alice.w@example.com", "phone": "3333333333"},
+]
+
+# Sample data for testing case-insensitivity in search
+case_insensitive_search_data = [
+    {"name": "Peter Pan", "email": "peter.p@neverland.com", "phone": "4444444444"},
+    {"name": "Wendy Darling", "email": "wendy.d@neverland.com", "phone": "5555555555"},
+]
+
+# Sample data for testing removal
+removal_contacts_data = [
+    {"name": "Contact To Remove", "email": "remove.me@example.com", "phone": "6666666666"},
+    {"name": "Another Contact", "email": "another@example.com", "phone": "7777777777"},
+]
+
+# Create instances of Contact objects for testing
+valid_contacts = [
+    Contact(data["name"], data["email"], data["phone"]) for data in valid_contacts_data
+]
+
+invalid_contacts = [
+    (data["name"], data.get("email"), data.get("phone")) for data in invalid_contacts_data
+]
+
+search_contacts = [
+    Contact(data["name"], data["email"], data["phone"]) for data in search_contacts_data
+]
+
+case_insensitive_search_contacts = [
+    Contact(data["name"], data["email"], data["phone"]) for data in case_insensitive_search_data
+]
+
+removal_contacts = [
+    Contact(data["name"], data["email"], data["phone"]) for data in removal_contacts_data
+]
+
+# Create a ContactBook instance for testing
+test_contact_book = ContactBook()
+
+# Populate the test_contact_book with some initial data
+for contact in valid_contacts:
+    test_contact_book.add_contact(contact)
+
+# Add specific contacts for search tests
+for contact in search_contacts:
+    test_contact_book.add_contact(contact)
+
+# Add specific contacts for case-insensitive search tests
+for contact in case_insensitive_search_contacts:
+    test_contact_book.add_contact(contact)
+
+# Add specific contacts for removal tests
+for contact in removal_contacts:
+    test_contact_book.add_contact(contact)
+
+────────────────────────────────────────────────────────────────────────────────

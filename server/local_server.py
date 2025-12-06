@@ -202,13 +202,13 @@ class LocalServer:
             print(f"[LocalServer] ERROR: {str(e)}")
             return self.execution_results
     
-    def run_tests(self, test_file="test_main.py", timeout=300):
+    def run_tests(self, test_file="test_main.py", timeout=30):
         """
         Run pytest tests in the current project directory
         
         Args:
             test_file (str): Test file to run (default: "test_main.py")
-            timeout (int): Maximum execution time in seconds (default: 300)
+            timeout (int): Maximum execution time in seconds (default: 30)
         
         Returns:
             dict: Test execution results containing exit_code, passed, stdout, stderr, etc.
@@ -236,37 +236,21 @@ class LocalServer:
         start_time = time.time()
         
         try:
-            # Try to run pytest with JSON report plugin first
+            # Run pytest with timeout plugin to prevent individual test hangs
+            # --timeout=10: Each test must complete within 10 seconds
             result = subprocess.run(
-                ["python", "-m", "pytest", test_file, "-v", "--tb=short", 
-                 "--json-report", "--json-report-file=pytest_report.json"],
+                ["python", "-m", "pytest", test_file, "-v", "--tb=short", "--timeout=10"],
                 cwd=self.current_project_path,
                 capture_output=True,
                 text=True,
                 timeout=timeout
             )
             
-            # If pytest-json-report is not installed, fall back to regular pytest
-            if "No module named" in result.stderr and "json_report" in result.stderr:
-                print("[LocalServer] JSON report plugin not available, using standard pytest")
-                result = subprocess.run(
-                    ["python", "-m", "pytest", test_file, "-v", "--tb=short"],
-                    cwd=self.current_project_path,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout
-                )
-            
             execution_time = time.time() - start_time
             
-            # Try to load JSON report if available
+            # JSON report generation removed for simplicity
+            # Tests can still be run successfully without it
             json_report = None
-            json_report_path = self.file_manager.join_path(self.current_project_path, "pytest_report.json")
-            if self.file_manager.file_exists(json_report_path):
-                try:
-                    json_report = self.file_manager.load_json(json_report_path)
-                except Exception as e:
-                    print(f"[LocalServer] Warning: Could not load JSON report: {str(e)}")
             
             # Store execution results
             test_output = result.stdout + result.stderr
