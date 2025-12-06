@@ -11,12 +11,14 @@ from config.settings import Settings
 from utils.file_manager import FileManager
 from utils.memory_manager import MemoryManager
 from utils.langchain_wrapper import LangChainWrapper
+from utils.conversation_logger import ConversationLogger
+from datetime import datetime
 
 
 class AgentTester:
     """Agent responsible for writing and executing test cases"""
     
-    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True, local_server=None):
+    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True, local_server=None, session_id=None):
         """
         Initialize the Tester agent
         
@@ -26,12 +28,19 @@ class AgentTester:
             workspace_dir: Directory where test files will be created
             enable_memory: Whether to enable LangChain memory
             local_server: Optional LocalServer instance for test execution. If None, creates one.
+            session_id: Optional session ID for conversation logging
         """
         self.mcp_client = mcp_client
         self.api_usage_tracker = api_usage_tracker
         self.file_manager = FileManager()
         self.logger = logging.getLogger(__name__)
         self.workspace_dir = workspace_dir or Settings.WORKSPACE_DIR
+        
+        # Initialize conversation logger
+        self.conversation_logger = ConversationLogger(
+            agent_name="tester",
+            session_id=session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+        )
         
         # Initialize LocalServer if not provided
         if local_server is None:
@@ -120,11 +129,15 @@ Requirements:
 5. Follow pytest best practices
 6. Include docstrings explaining what each test does
 7. Make tests readable and maintainable
+8. Import functions/classes directly and test them - do NOT test main() functions or if __name__ blocks
 
 Generate a complete test file named test_main.py that can be executed with pytest.
 Include all necessary imports and setup.
 
-Generate ONLY the Python test code, no markdown formatting, no explanations, just the test code itself.
+CRITICAL: Your response must contain ONLY raw Python test code.
+DO NOT wrap the code in markdown code blocks (```python or ```).
+DO NOT include any explanations, comments outside the code, or formatting.
+Start your response directly with the first line of Python code (imports).
 """
         
         try:
@@ -152,6 +165,14 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
                     token_usage = self.mcp_client.get_token_usage()
                     if token_usage:
                         self.api_usage_tracker.track_usage("tester", token_usage)
+                
+                # Extract text and log conversation
+                response_text = self.mcp_client.extract_text_from_response(response)
+                self.conversation_logger.log_interaction(
+                    prompt=prompt,
+                    response=response_text,
+                    metadata=self.mcp_client.get_token_usage()
+                )
             
             # Extract test code from response
             test_code = self._extract_code_from_response(response)
@@ -289,22 +310,55 @@ Generate ONLY the Python test code, no markdown formatting, no explanations, jus
         
         return "\n".join(parts) if parts else "No architectural plan details"
     
-    def _extract_code_from_response(self, response: str) -> str:
-        """Extract Python code from MCP response"""
-        # Remove markdown code blocks if present
-        if "```python" in response:
-            start = response.find("```python") + 9
-            end = response.find("```", start)
-            if end != -1:
-                return response[start:end].strip()
+    def _extract_code_from_response(self, response: Any) -> str:
+        """Extract Python code from MCP response, removing markdown if present"""
+        # First, extract text from response if it's a dictionary
+        if isinstance(response, dict):
+            response_text = self.mcp_client.extract_text_from_response(response)
+        else:
+            response_text = str(response)
         
-        if "```" in response:
-            start = response.find("```") + 3
-            end = response.find("```", start)
-            if end != -1:
-                return response[start:end].strip()
+        # More aggressive markdown removal - line by line processing
+        lines = response_text.split('\n')
+        code_lines = []
+        in_code_block = False
         
-        return response.strip()
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            
+            # Detect markdown code block start/end
+            if stripped.startswith('```python') or stripped.startswith('```'):
+                in_code_block = not in_code_block
+                continue
+            
+            # Skip lines that are clearly not code
+            if not in_code_block and (stripped.startswith('#') and i == 0):
+                continue
+                
+            # Collect code lines
+            if in_code_block or stripped:
+                code_lines.append(line)
+        
+        result = '\n'.join(code_lines).strip()
+        
+        # If still empty or looks like it failed, try original simple method
+        if not result or len(result) < 10:
+            # Fallback: simple extraction
+            if "```python" in response_text:
+                start = response_text.find("```python") + 9
+                end = response_text.find("```", start)
+                if end != -1:
+                    return response_text[start:end].strip()
+            
+            if "```" in response_text:
+                start = response_text.find("```") + 3
+                end = response_text.find("```", start)
+                if end != -1:
+                    return response_text[start:end].strip()
+            
+            return response_text.strip()
+        
+        return result
     
     def _extract_failures(self, test_output: str) -> List[Dict[str, str]]:
         """Extract failure information from pytest output"""

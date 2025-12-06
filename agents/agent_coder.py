@@ -10,12 +10,14 @@ from typing import Dict, Any, Optional
 from config.settings import Settings
 from utils.memory_manager import MemoryManager
 from utils.langchain_wrapper import LangChainWrapper
+from utils.conversation_logger import ConversationLogger
+from datetime import datetime
 
 
 class AgentCoder:
     """Agent responsible for code generation based on architectural plan"""
     
-    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True, local_server=None):
+    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True, local_server=None, session_id=None):
         """
         Initialize the Coder agent
         
@@ -25,11 +27,18 @@ class AgentCoder:
             workspace_dir: Directory where generated code will be saved
             enable_memory: Whether to enable LangChain memory
             local_server: Optional LocalServer instance for file operations. If None, creates one.
+            session_id: Optional session ID for conversation logging
         """
         self.mcp_client = mcp_client
         self.api_usage_tracker = api_usage_tracker
         self.logger = logging.getLogger(__name__)
         self.workspace_dir = workspace_dir or Settings.WORKSPACE_DIR
+        
+        # Initialize conversation logger
+        self.conversation_logger = ConversationLogger(
+            agent_name="coder",
+            session_id=session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+        )
         
         # Initialize LocalServer if not provided
         if local_server is None:
@@ -170,8 +179,13 @@ Requirements:
 - Make the code modular and well-structured
 - Include error handling where appropriate
 - Ensure the code will pass the tests
+- If this is main.py: DO NOT include 'if __name__ == "__main__":' block that calls main() - tests will import and call functions directly
+- If this includes a main() function: Keep it as a regular function without the if __name__ guard
 
-Generate ONLY the Python code, no markdown formatting, no explanations, just the code itself.
+CRITICAL: Your response must contain ONLY raw Python code. 
+DO NOT wrap the code in markdown code blocks (```python or ```).
+DO NOT include any explanations, comments outside the code, or formatting.
+Start your response directly with the first line of Python code (imports or docstrings).
 """
         
         try:
@@ -364,8 +378,13 @@ Requirements:
 - Make the code modular and well-structured
 - Include error handling where appropriate
 - Ensure the code is ready to be executed
+- If this is main.py: DO NOT include 'if __name__ == "__main__":' block that calls main() - tests will import and call functions directly
+- If this includes a main() function: Keep it as a regular function without the if __name__ guard
 
-Generate ONLY the Python code, no markdown formatting, no explanations, just the code itself.
+CRITICAL: Your response must contain ONLY raw Python code. 
+DO NOT wrap the code in markdown code blocks (```python or ```).
+DO NOT include any explanations, comments outside the code, or formatting.
+Start your response directly with the first line of Python code (imports or docstrings).
 """
         
         try:
@@ -395,6 +414,14 @@ Generate ONLY the Python code, no markdown formatting, no explanations, just the
                     token_usage = self.mcp_client.get_token_usage()
                     if token_usage:
                         self.api_usage_tracker.track_usage("coder", token_usage)
+                
+                # Extract text and log conversation
+                response_text = self.mcp_client.extract_text_from_response(response)
+                self.conversation_logger.log_interaction(
+                    prompt=prompt,
+                    response=response_text,
+                    metadata=self.mcp_client.get_token_usage()
+                )
             
             # Extract code from response (remove markdown if present)
             code = self._extract_code_from_response(response, filename)
@@ -430,20 +457,53 @@ Generate ONLY the Python code, no markdown formatting, no explanations, just the
         
         return "\n".join(context_parts)
     
-    def _extract_code_from_response(self, response: str, filename: str) -> str:
+    def _extract_code_from_response(self, response: Any, filename: str) -> str:
         """Extract Python code from MCP response, removing markdown if present"""
-        # Remove markdown code blocks if present
-        if "```python" in response:
-            start = response.find("```python") + 9
-            end = response.find("```", start)
-            if end != -1:
-                return response[start:end].strip()
+        # First, extract text from response if it's a dictionary
+        if isinstance(response, dict):
+            response_text = self.mcp_client.extract_text_from_response(response)
+        else:
+            response_text = str(response)
         
-        if "```" in response:
-            start = response.find("```") + 3
-            end = response.find("```", start)
-            if end != -1:
-                return response[start:end].strip()
+        # More aggressive markdown removal - line by line processing
+        lines = response_text.split('\n')
+        code_lines = []
+        in_code_block = False
+        skip_next = False
         
-        # If response is already code, return as is
-        return response.strip()
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            
+            # Detect markdown code block start/end
+            if stripped.startswith('```python') or stripped.startswith('```'):
+                in_code_block = not in_code_block
+                continue
+            
+            # Skip lines that are clearly not code
+            if not in_code_block and (stripped.startswith('#') and i == 0):
+                continue
+                
+            # Collect code lines
+            if in_code_block or stripped:
+                code_lines.append(line)
+        
+        result = '\n'.join(code_lines).strip()
+        
+        # If still empty or looks like it failed, try original simple method
+        if not result or len(result) < 10:
+            # Fallback: simple extraction
+            if "```python" in response_text:
+                start = response_text.find("```python") + 9
+                end = response_text.find("```", start)
+                if end != -1:
+                    return response_text[start:end].strip()
+            
+            if "```" in response_text:
+                start = response_text.find("```") + 3
+                end = response_text.find("```", start)
+                if end != -1:
+                    return response_text[start:end].strip()
+            
+            return response_text.strip()
+        
+        return result

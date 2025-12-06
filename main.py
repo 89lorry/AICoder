@@ -43,6 +43,10 @@ def initialize_agents(enable_memory=False):
     logger = logging.getLogger(__name__)
     
     try:
+        # Generate session ID for all agents
+        from datetime import datetime
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
         # Import agents
         from agents.agent_architect import AgentArchitect
         from agents.agent_coder import AgentCoder
@@ -77,7 +81,8 @@ def initialize_agents(enable_memory=False):
         architect = AgentArchitect(
             mcp_client=mcp_client,
             api_usage_tracker=api_tracker,
-            enable_memory=enable_memory
+            enable_memory=enable_memory,
+            session_id=session_id
         )
         logger.info("✓ Agent A (Architect) initialized")
         
@@ -85,7 +90,8 @@ def initialize_agents(enable_memory=False):
             mcp_client=mcp_client,
             api_usage_tracker=api_tracker,
             local_server=local_server,
-            enable_memory=enable_memory
+            enable_memory=enable_memory,
+            session_id=session_id
         )
         logger.info("✓ Agent B (Coder) initialized")
         
@@ -93,7 +99,8 @@ def initialize_agents(enable_memory=False):
             mcp_client=mcp_client,
             api_usage_tracker=api_tracker,
             local_server=local_server,
-            enable_memory=enable_memory
+            enable_memory=enable_memory,
+            session_id=session_id
         )
         logger.info("✓ Agent C (Tester) initialized")
         
@@ -101,7 +108,8 @@ def initialize_agents(enable_memory=False):
             mcp_client=mcp_client,
             api_usage_tracker=api_tracker,
             local_server=local_server,
-            enable_memory=enable_memory
+            enable_memory=enable_memory,
+            session_id=session_id
         )
         logger.info("✓ Agent D (Debugger) initialized")
         

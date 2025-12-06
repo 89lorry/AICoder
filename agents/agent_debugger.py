@@ -9,12 +9,14 @@ from typing import Dict, Any, List, Optional
 from config.settings import Settings
 from utils.memory_manager import MemoryManager
 from utils.langchain_wrapper import LangChainWrapper
+from utils.conversation_logger import ConversationLogger
+from datetime import datetime
 
 
 class AgentDebugger:
     """Agent responsible for debugging and fixing code issues"""
     
-    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True, local_server=None):
+    def __init__(self, mcp_client, api_usage_tracker=None, workspace_dir=None, enable_memory=True, local_server=None, session_id=None):
         """
         Initialize the Debugger agent
         
@@ -24,11 +26,18 @@ class AgentDebugger:
             workspace_dir: Directory where code files are located
             enable_memory: Whether to enable LangChain memory
             local_server: Optional LocalServer instance for file operations and test execution. If None, creates one.
+            session_id: Optional session ID for conversation logging
         """
         self.mcp_client = mcp_client
         self.api_usage_tracker = api_usage_tracker
         self.logger = logging.getLogger(__name__)
         self.workspace_dir = workspace_dir or Settings.WORKSPACE_DIR
+        
+        # Initialize conversation logger
+        self.conversation_logger = ConversationLogger(
+            agent_name="debugger",
+            session_id=session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+        )
         
         # Initialize LocalServer if not provided
         if local_server is None:
@@ -160,9 +169,17 @@ Be specific and actionable in your analysis.
                     token_usage = self.mcp_client.get_token_usage()
                     if token_usage:
                         self.api_usage_tracker.track_usage("debugger", token_usage)
+                
+                # Extract text and log conversation
+                response_text = self.mcp_client.extract_text_from_response(response)
+                self.conversation_logger.log_interaction(
+                    prompt=prompt,
+                    response=response_text,
+                    metadata=self.mcp_client.get_token_usage()
+                )
             
             # Parse analysis
-            failure_analysis = self._parse_failure_analysis(response)
+            failure_analysis = self._parse_failure_analysis(response_text)
             self.debug_log.append({
                 "action": "analyze_failures",
                 "analysis": failure_analysis
@@ -482,9 +499,17 @@ Provide JSON with:
                     token_usage = self.mcp_client.get_token_usage()
                     if token_usage:
                         self.api_usage_tracker.track_usage("debugger", token_usage)
+                
+                # Extract text and log conversation
+                response_text = self.mcp_client.extract_text_from_response(response)
+                self.conversation_logger.log_interaction(
+                    prompt=prompt,
+                    response=response_text,
+                    metadata=self.mcp_client.get_token_usage()
+                )
             
             # Parse response
-            instructions = self._parse_regeneration_instructions(response)
+            instructions = self._parse_regeneration_instructions(response_text)
             instructions["needs_regeneration"] = True
             instructions["original_architectural_plan"] = self.code_package.get("architectural_plan")
             

@@ -9,12 +9,14 @@ from config.settings import Settings
 from utils.file_manager import FileManager
 from utils.memory_manager import MemoryManager
 from utils.langchain_wrapper import LangChainWrapper
+from utils.conversation_logger import ConversationLogger
+from datetime import datetime
 
 
 class AgentArchitect:
     """Agent responsible for architectural design and file structure planning"""
     
-    def __init__(self, mcp_client, api_usage_tracker=None, enable_memory=True):
+    def __init__(self, mcp_client, api_usage_tracker=None, enable_memory=True, session_id=None):
         """
         Initialize the Architect agent
         
@@ -22,11 +24,18 @@ class AgentArchitect:
             mcp_client: MCP client instance for AI interactions
             api_usage_tracker: Optional API usage tracker instance
             enable_memory: Whether to enable LangChain memory
+            session_id: Optional session ID for conversation logging
         """
         self.mcp_client = mcp_client
         self.api_usage_tracker = api_usage_tracker
         self.file_manager = FileManager()
         self.logger = logging.getLogger(__name__)
+        
+        # Initialize conversation logger
+        self.conversation_logger = ConversationLogger(
+            agent_name="architect",
+            session_id=session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+        )
         
         # Initialize LangChain memory
         self.memory_manager = None
@@ -98,6 +107,13 @@ Provide a JSON response with:
                 
                 # Extract text from response
                 response_text = self.mcp_client.extract_text_from_response(response)
+                
+                # Log conversation
+                self.conversation_logger.log_interaction(
+                    prompt=prompt,
+                    response=response_text,
+                    metadata=self.mcp_client.get_token_usage()
+                )
             
             # Parse response
             analysis = self._parse_analysis(response_text)
