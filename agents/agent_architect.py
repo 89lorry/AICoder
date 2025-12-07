@@ -270,20 +270,3 @@ Response MUST be parseable JSON starting with {{ and ending with }}.
                     "notes": []
                 }
             }
-    
-    # Legacy methods for backwards compatibility (now just call the combined method)
-    def analyze_requirements(self, requirements: str) -> Dict[str, Any]:
-        """Legacy method - now uses combined architecture creation"""
-        plan = self.create_complete_architecture(requirements)
-        return plan.get("analysis", {})
-    
-    def design_file_structure(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Legacy method - returns cached file structure"""
-        if self.architectural_plan:
-            return self.architectural_plan.get("file_structure", {})
-        return {}
-    
-    def create_architectural_plan(self, analysis: Dict[str, Any], 
-                                   file_structure: Dict[str, Any]) -> Dict[str, Any]:
-        """Legacy method - returns complete cached plan"""
-        return self.architectural_plan if self.architectural_plan else {}

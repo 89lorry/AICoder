@@ -71,7 +71,7 @@ class AgentDebugger:
         self.test_analysis = None
         self.debug_log = []
         self.fixed_code = {}
-        self.max_fix_iterations = 3
+        self.max_fix_iterations = 5  # Maximum internal retry attempts
         self.current_iteration = 0
         self.max_retries = 3  # Maximum retries for API timeouts
     
@@ -211,352 +211,334 @@ class AgentDebugger:
         
         self.logger.info(f"Received code package and test results. Status: {self.test_analysis.get('overall_status', 'unknown') if self.test_analysis else 'unknown'}")
     
-    def analyze_failures(self) -> Dict[str, Any]:
+    def analyze_and_fix_combined(self) -> Dict[str, Any]:
         """
-        Analyze test failures and identify issues
+        OPTIMIZED: Analyze failures + Fix code + Update tests in ONE API call
+        Then run internal loop with LocalServer execution until tests pass
         
         Returns:
-            Dictionary containing failure analysis
+            Dictionary containing all fixed code and test results
         """
         if not self.test_analysis:
             raise ValueError("No test analysis available. Call receive_code_and_results() first.")
         
         if self.test_analysis.get("overall_status") == "passed":
-            self.logger.info("No failures to analyze - all tests passed")
+            self.logger.info("No failures to fix - all tests passed")
             return {
-                "has_failures": False,
-                "issues": [],
-                "recommendation": "No debugging needed"
+                "success": True,
+                "fixed_code": self.code_package.get("code", {}),
+                "iterations": 0
             }
         
-        self.logger.info("Analyzing test failures...")
+        self.logger.info("Starting combined analyze+fix+test in ONE API call with internal retry loop...")
         
-        failures = self.test_analysis.get("failures", [])
-        code = self.code_package.get("code", {})
+        all_attempts = []
         
-        prompt = f"""Analyze the following test failures and identify the root causes:
+        for attempt in range(1, self.max_fix_iterations + 1):
+            self.current_iteration = attempt
+            self.logger.info(f"\n{'='*60}")
+            self.logger.info(f"Debugger Attempt {attempt}/{self.max_fix_iterations}")
+            self.logger.info(f"{'='*60}")
+            
+            # Get current failures
+            failures = self.test_analysis.get("failures", [])
+            code = self.fixed_code if self.fixed_code else self.code_package.get("code", {})
+            test_output = self.test_results.get('output', '') if self.test_results else ''
+            
+            # Build combined prompt for analyze + fix + update tests
+            prompt = f"""You are debugging code that failed tests. Provide fixes as a structured response.
 
 Test Failures:
 {self._format_failures(failures)}
 
-Original Code:
+Current Code:
 {self._format_code(code)}
 
-Test Output:
-{self.test_results.get('output', '')[:2000] if self.test_results else 'N/A'}
+Test Output (last 2000 chars):
+{test_output[-2000:] if len(test_output) > 2000 else test_output}
 
-⚠️ CRITICAL JSON OUTPUT REQUIREMENTS (READ CAREFULLY):
+Attempt: {attempt}/{self.max_fix_iterations}
+
+⚠️ CRITICAL TESTING PATTERNS - Read carefully before fixing tests:
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. NO MARKDOWN CODE BLOCKS - Do NOT use ```json or ``` or any backticks
-2. NO EXPLANATORY TEXT - Do NOT include any text before or after the JSON
-3. START WITH {{ - Your response MUST begin with the opening curly brace
-4. END WITH }} - Your response MUST end with the closing curly brace
-5. PURE JSON ONLY - If you include ANY non-JSON characters, the system will FAIL
+1. MOCKING CLASSES: Use @patch, NEVER reassign class variables
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-WRONG (will cause system failure):
-```json
-{{"issues": []}}
+❌ WRONG - Causes UnboundLocalError:
+    original_manager = ContactManager  
+    ContactManager = MagicMock(...)
+
+✅ CORRECT - Use @patch decorator:
+    @patch('main.ContactManager')
+    def test_function(MockContactManager, ...):
+        MockContactManager.return_value = manager_fixture
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. MOCKING VS REAL OBJECTS: Choose the right approach
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When testing code that calls internal methods (e.g., add_contact calls save_contacts):
+
+❌ WRONG - MagicMock prevents real method execution:
+    mock_instance = MagicMock(spec=ContactManager)
+    mock_instance.add_contact = MagicMock()  # Real add_contact never runs!
+    MockContactManager.return_value = mock_instance
+    # save_contacts is never called because add_contact mock doesn't execute real code
+
+✅ CORRECT - Use REAL fixture objects:
+    @patch('main.ContactManager')
+    def test_add_contact(MockContactManager, contact_manager):
+        MockContactManager.return_value = contact_manager  # Real object!
+        # Now add_contact executes real code and calls save_contacts
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. PRINTING OBJECTS: Extract string representations correctly
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When code does: print(contact)  # where contact has __str__ method
+
+❌ WRONG - Gets object reference, not string:
+    printed_calls = [call.args[0] for call in mock_print.call_args_list]
+    # Results in: [<main.Contact object at 0x...>]
+
+✅ CORRECT - Convert to string:
+    printed_calls = [str(call.args[0]) if not isinstance(call.args[0], str) 
+                     else call.args[0] for call in mock_print.call_args_list]
+    # Results in: ["Name: Alice Smith, Email: alice@example.com, ..."]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. LEARNING FROM PREVIOUS ATTEMPTS: Don't repeat mistakes!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If previous attempts show:
+- "Expected 'save_contacts' to have been called once. Called 0 times"
+  → You're using MagicMock when you should use real fixture!
+
+- "AssertionError: assert 'Name: ...' in [<main.Contact object>]"
+  → You need to convert objects to strings in your assertions!
+
+- Same error appears 2+ times
+  → Your fix didn't work! Try a COMPLETELY DIFFERENT approach!
+
+COMPLETE TESTING PATTERN EXAMPLE:
+```python
+from unittest.mock import patch
+
+@patch('builtins.input', side_effect=['2', 'Alice', '5'])
+@patch('builtins.print')
+@patch('main.ContactManager')
+def test_search(MockContactManager, mock_print, mock_input, populated_contact_manager):
+    # Use REAL fixture, not MagicMock!
+    MockContactManager.return_value = populated_contact_manager
+    
+    from main import main
+    main()
+    
+    # Convert printed objects to strings
+    printed_calls = []
+    for call in mock_print.call_args_list:
+        arg = call.args[0] if call.args else ""
+        printed_calls.append(str(arg))
+    
+    # Now assertions work correctly
+    assert "Name: Alice Smith, Email: alice@example.com, Phone: 123-456-7890" in printed_calls
 ```
 
-CORRECT (this is what you must do):
-{{"issues": [], "fix_priority": [], "summary": "..."}}
+YOUR TASK:
+1. Analyze what's wrong - identify the ROOT CAUSE (not just symptoms)
+2. Fix ALL code files that have issues using CORRECT patterns
+3. Update test file if needed to match fixed code
+4. DO NOT repeat the same mistake from previous attempts!
 
-Provide a JSON analysis with:
-1. "issues": List of identified issues, each with:
-   - "file": Which file has the issue
-   - "location": Where in the file (function/class name)
-   - "problem": Description of the problem
-   - "root_cause": Why this is happening
-   - "severity": "critical", "high", "medium", or "low"
-2. "fix_priority": Order in which to fix issues
-3. "summary": Overall summary of issues
+RESPONSE FORMAT:
+First, provide analysis section:
+ANALYSIS_START
+- Issue 1: [file] [problem and ROOT CAUSE]
+- Issue 2: [file] [problem and ROOT CAUSE]
+Summary: [brief summary]
+ANALYSIS_END
 
-Be specific and actionable in your analysis.
-"""
-        
-        try:
-            # Prepare context for LangChain
-            context = {
-                "failures": failures,
-                "code": code,
-                "test_output": self.test_results.get('output', '')[:2000] if self.test_results else 'N/A',
-                "iteration": self.current_iteration
-            }
-            
-            # Use LangChain wrapper if available
-            if self.langchain_wrapper:
-                response = self.langchain_wrapper.invoke(prompt, context=context)
-                # Track API usage
-                if self.api_usage_tracker:
-                    token_usage = self.langchain_wrapper.get_token_usage()
-                    if token_usage:
-                        self.api_usage_tracker.track_usage("debugger", token_usage)
-            else:
-                # Fallback to direct MCP client
-                if not hasattr(self.mcp_client, 'session') or self.mcp_client.session is None:
-                    self.mcp_client.connect()
-                response = self.mcp_client.send_request(prompt)
-                # Track API usage
-                if self.api_usage_tracker:
-                    token_usage = self.mcp_client.get_token_usage()
-                    if token_usage:
-                        self.api_usage_tracker.track_usage("debugger", token_usage)
-                
-                # Extract text and log conversation
-                response_text = self.mcp_client.extract_text_from_response(response)
-                self.conversation_logger.log_interaction(
-                    prompt=prompt,
-                    response=response_text,
-                    metadata=self.mcp_client.get_token_usage()
-                )
-            
-            # Parse analysis
-            failure_analysis = self._parse_failure_analysis(response_text)
-            self.debug_log.append({
-                "action": "analyze_failures",
-                "analysis": failure_analysis
-            })
-            
-            self.logger.info(f"Identified {len(failure_analysis.get('issues', []))} issues")
-            return failure_analysis
-            
-        except Exception as e:
-            self.logger.error(f"Error analyzing failures: {str(e)}")
-            raise
-    
-    def debug_code(self, failure_analysis: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
-        """
-        Debug and fix code issues
-        
-        Args:
-            failure_analysis: Optional failure analysis from analyze_failures()
-            
-        Returns:
-            Dictionary mapping filenames to fixed code
-        """
-        if not failure_analysis:
-            failure_analysis = self.analyze_failures()
-        
-        if not failure_analysis.get("has_failures", True):
-            self.logger.info("No issues to fix")
-            self.fixed_code = self.code_package.get("code", {}).copy()
-            return self.fixed_code
-        
-        self.current_iteration += 1
-        if self.current_iteration > self.max_fix_iterations:
-            self.logger.warning(f"Maximum fix iterations ({self.max_fix_iterations}) reached")
-            self.fixed_code = self.code_package.get("code", {}).copy()
-            return self.fixed_code
-        
-        self.logger.info(f"Debugging and fixing code (iteration {self.current_iteration})...")
-        
-        issues = failure_analysis.get("issues", [])
-        code = self.code_package.get("code", {})
-        
-        # Group issues by file
-        issues_by_file = {}
-        for issue in issues:
-            file = issue.get("file", "unknown.py")
-            if file not in issues_by_file:
-                issues_by_file[file] = []
-            issues_by_file[file].append(issue)
-        
-        # Fix each file that has issues
-        fixed_code = code.copy()
-        
-        for filename, file_issues in issues_by_file.items():
-            if filename not in fixed_code:
-                self.logger.warning(f"File {filename} mentioned in issues but not in code package")
-                continue
-            
-            self.logger.info(f"Fixing issues in {filename}...")
-            
-            prompt = f"""Fix the following issues in the Python file {filename}:
+Then, provide each fixed file:
+FILE_START: filename.py
+[complete fixed code here]
+FILE_END
 
-Current Code:
-{fixed_code[filename]}
+FILE_START: another_file.py
+[complete fixed code here]  
+FILE_END
 
-Issues to Fix:
-{self._format_issues(file_issues)}
+CRITICAL RULES:
+- Use the exact format above with ANALYSIS_START/END and FILE_START/END markers
+- Include complete code for each file that needs fixing
+- No JSON, no markdown code blocks
+- Only include files that actually need changes
+- If this is attempt 2+, DO NOT repeat the same fix that failed before!
 
-Requirements:
-1. Fix all identified issues
-2. Maintain the original code structure and logic intent
-3. Ensure the code follows Python best practices
-4. Add proper error handling if missing
-5. Ensure all tests should pass after fixes
-6. Do not break any existing functionality that works
-
-Generate ONLY the complete fixed Python code for {filename}, no markdown formatting, no explanations, just the fixed code itself.
+Previous attempts: {attempt - 1}
+{f"⚠️ WARNING: You already tried {attempt - 1} time(s). Use a DIFFERENT approach!" if attempt > 1 else ""}
 """
             
             try:
-                # Prepare context for LangChain
-                context = {
-                    "filename": filename,
-                    "current_code": fixed_code[filename],
-                    "issues": file_issues,
-                    "iteration": self.current_iteration,
-                    "previous_fixes": [log for log in self.debug_log if log.get("action") == "fix_code"]
-                }
-                
-                # Use LangChain wrapper if available
+                # Single combined API call
                 if self.langchain_wrapper:
-                    response = self.langchain_wrapper.invoke(prompt, context=context)
-                    # Track API usage
+                    response = self.langchain_wrapper.invoke(prompt)
                     if self.api_usage_tracker:
                         token_usage = self.langchain_wrapper.get_token_usage()
                         if token_usage:
                             self.api_usage_tracker.track_usage("debugger", token_usage)
+                    # Log conversation
+                    response_text = response if isinstance(response, str) else self.mcp_client.extract_text_from_response(response)
+                    self.conversation_logger.log_interaction(
+                        prompt=prompt,
+                        response=response_text,
+                        metadata=self.langchain_wrapper.get_token_usage()
+                    )
                 else:
-                    # Fallback to direct MCP client
+                    if not hasattr(self.mcp_client, 'session') or self.mcp_client.session is None:
+                        self.mcp_client.connect()
                     response = self.mcp_client.send_request(prompt)
-                    # Track API usage
                     if self.api_usage_tracker:
                         token_usage = self.mcp_client.get_token_usage()
                         if token_usage:
                             self.api_usage_tracker.track_usage("debugger", token_usage)
+                    # Log conversation
+                    response_text = self.mcp_client.extract_text_from_response(response)
+                    self.conversation_logger.log_interaction(
+                        prompt=prompt,
+                        response=response_text,
+                        metadata=self.mcp_client.get_token_usage()
+                    )
                 
-                # Extract fixed code
-                fixed_file_code = self._extract_code_from_response(response)
-                fixed_code[filename] = fixed_file_code
+                # Parse combined response in text format
+                if isinstance(response, dict):
+                    response_text = self.mcp_client.extract_text_from_response(response)
+                else:
+                    response_text = str(response)
                 
-                self.debug_log.append({
-                    "action": "fix_code",
-                    "file": filename,
-                    "iteration": self.current_iteration
-                })
+                # Parse text format with markers
+                analysis_summary = ""
+                fixed_files = {}
                 
-                self.logger.info(f"Fixed code for {filename}")
+                # Extract analysis
+                if 'ANALYSIS_START' in response_text and 'ANALYSIS_END' in response_text:
+                    analysis_start = response_text.find('ANALYSIS_START')
+                    analysis_end = response_text.find('ANALYSIS_END')
+                    analysis_summary = response_text[analysis_start:analysis_end+12].strip()
+                    self.logger.info(f"Analysis extracted: {len(analysis_summary)} chars")
                 
+                # Extract files
+                import re
+                file_pattern = r'FILE_START:\s*(.+?)\n(.*?)FILE_END'
+                matches = re.findall(file_pattern, response_text, re.DOTALL)
+                
+                for filename, content in matches:
+                    filename = filename.strip()
+                    content = content.strip()
+                    fixed_files[filename] = content
+                    self.logger.info(f"Extracted fixed file: {filename} ({len(content)} chars)")
+                
+                if not fixed_files:
+                    self.logger.warning("No fixed files found in response!")
+                    # Try to continue with next attempt
+                    attempt_result = {
+                        "attempt": attempt,
+                        "analysis": {"summary": "Failed to parse response"},
+                        "fixed_files": [],
+                        "test_passed": False,
+                        "error": "No fixed files in response"
+                    }
+                    all_attempts.append(attempt_result)
+                    continue
+                
+                # Apply fixes to code
+                updated_code = code.copy()
+                for filename, fixed_content in fixed_files.items():
+                    updated_code[filename] = fixed_content
+                    self.logger.info(f"  Applied fix to {filename}")
+                
+                self.fixed_code = updated_code
+                
+                # Save to LocalServer and run tests
+                files_to_save = updated_code.copy()
+                code_package = {
+                    "project_name": "debug_project",
+                    "files": files_to_save,
+                    "entry_point": "main.py"
+                }
+                
+                self.local_server.receive_code_package(code_package)
+                project_path = self.local_server.save_code_to_directory(code_package)
+                self.logger.info(f"Saved fixed code to {project_path}")
+                
+                # Run tests on LocalServer
+                self.logger.info("Running tests on fixed code...")
+                test_results = self.local_server.run_tests(
+                    test_file="test_main.py",
+                    timeout=300
+                )
+                
+                attempt_result = {
+                    "attempt": attempt,
+                    "analysis": {"summary": analysis_summary},
+                    "fixed_files": list(fixed_files.keys()),
+                    "test_passed": test_results.get("passed", False),
+                    "test_output": test_results.get("output", "")[:500]
+                }
+                all_attempts.append(attempt_result)
+                
+                if test_results.get("passed"):
+                    self.logger.info(f"✅ All tests passed after attempt {attempt}!")
+                    return {
+                        "success": True,
+                        "fixed_code": self.fixed_code,
+                        "attempts": all_attempts,
+                        "final_test_results": test_results
+                    }
+                else:
+                    self.logger.warning(f"⚠️  Tests still failing after attempt {attempt}")
+                    # Update test_results for next iteration
+                    self.test_results = test_results
+                    # Parse failures for next iteration
+                    self.test_analysis = {
+                        "overall_status": "failed",
+                        "has_failures": True,
+                        "failures": self._parse_test_failures(test_results.get("output", ""))
+                    }
+                        
             except Exception as e:
-                self.logger.error(f"Error fixing {filename}: {str(e)}")
-                # Keep original code if fix fails
+                self.logger.error(f"Error in attempt {attempt}: {str(e)}")
+                all_attempts.append({
+                    "attempt": attempt,
+                    "error": str(e),
+                    "test_passed": False
+                })
         
-        self.fixed_code = fixed_code
-        
-        # Save all fixed code as a code package (include test file if available)
-        if fixed_code:
-            # Include test file from code package if it exists
-            files_to_save = fixed_code.copy()
-            code_package_data = self.code_package.get("code", {})
-            if "test_main.py" in code_package_data:
-                files_to_save["test_main.py"] = code_package_data["test_main.py"]
-            
-            code_package = {
-                "project_name": "debug_project",
-                "files": files_to_save,
-                "entry_point": "main.py"
-            }
-            
-            # Receive and save fixed code package
-            self.local_server.receive_code_package(code_package)
-            project_path = self.local_server.save_code_to_directory(code_package)
-            self.logger.info(f"Saved fixed code package to {project_path}")
-        
-        return fixed_code
-    
-    def verify_fixes(self) -> Dict[str, Any]:
-        """
-        Verify that fixes resolve the issues by re-running tests via LocalServer
-        
-        Returns:
-            Dictionary containing verification results
-        """
-        if not self.fixed_code:
-            raise ValueError("No fixed code available. Call debug_code() first.")
-        
-        self.logger.info("Verifying fixes by re-running tests via LocalServer...")
-        
-        if not self.local_server.current_project_path:
-            raise ValueError("No fixed code package saved. Call debug_code() first.")
-        
-        # Re-run tests using LocalServer
-        try:
-            # Determine test file name
-            test_file = "test_main.py"
-            if self.test_results:
-                # Extract just the filename from the full path
-                test_file_path = self.test_results.get("test_file", "")
-                if test_file_path:
-                    test_file = os.path.basename(test_file_path)
-            
-            # Use LocalServer to run tests
-            test_results = self.local_server.run_tests(
-                test_file=test_file,
-                timeout=Settings.TIMEOUT_SECONDS
-            )
-            
-            verification = {
-                "exit_code": test_results.get("exit_code", -1),
-                "passed": test_results.get("passed", False),
-                "stdout": test_results.get("stdout", ""),
-                "stderr": test_results.get("stderr", ""),
-                "output": test_results.get("output", ""),
-                "iteration": self.current_iteration
-            }
-            
-            if verification["passed"]:
-                self.logger.info("All tests passed after fixes!")
-            else:
-                self.logger.warning("Some tests still failing after fixes")
-            
-            self.debug_log.append({
-                "action": "verify_fixes",
-                "result": verification
-            })
-            
-            return verification
-            
-        except Exception as e:
-            self.logger.error(f"Error verifying fixes: {str(e)}")
-            return {
-                "passed": False,
-                "error": str(e),
-                "iteration": self.current_iteration
-            }
-    
-    def debug_and_verify(self) -> Dict[str, Any]:
-        """
-        Complete debug cycle: analyze, fix, and verify
-        
-        Returns:
-            Dictionary containing final results
-        """
-        all_results = []
-        
-        for iteration in range(self.max_fix_iterations):
-            self.current_iteration = iteration + 1
-            self.logger.info(f"Debug iteration {self.current_iteration}/{self.max_fix_iterations}")
-            
-            # Analyze failures
-            failure_analysis = self.analyze_failures()
-            
-            if not failure_analysis.get("has_failures", True):
-                self.logger.info("No failures found - debugging complete")
-                break
-            
-            # Fix code
-            self.debug_code(failure_analysis)
-            
-            # Verify fixes
-            verification = self.verify_fixes()
-            all_results.append({
-                "iteration": self.current_iteration,
-                "failure_analysis": failure_analysis,
-                "verification": verification
-            })
-            
-            if verification.get("passed"):
-                self.logger.info(f"All tests passed after iteration {self.current_iteration}")
-                break
-        
+        # Max attempts reached
+        self.logger.warning(f"Maximum attempts ({self.max_fix_iterations}) reached without passing all tests")
         return {
-            "iterations": all_results,
-            "final_status": "passed" if all_results and all_results[-1]["verification"].get("passed") else "failed",
-            "total_iterations": len(all_results)
+            "success": False,
+            "fixed_code": self.fixed_code if self.fixed_code else code,
+            "attempts": all_attempts,
+            "final_test_results": self.test_results
         }
+    
+    def _parse_test_failures(self, test_output: str) -> List[Dict[str, Any]]:
+        """Parse test failures from pytest output"""
+        failures = []
+        if "FAILED" in test_output:
+            lines = test_output.split('\n')
+            for line in lines:
+                if line.strip().startswith("FAILED"):
+                    parts = line.split(" - ")
+                    test_name = parts[0].replace("FAILED ", "").strip()
+                    error_msg = parts[1] if len(parts) > 1 else "Test failed"
+                    failures.append({
+                        "test_name": test_name,
+                        "status": "failed",
+                        "error_message": error_msg
+                    })
+        return failures
     
     def get_final_package(self) -> Dict[str, Any]:
         """
@@ -577,103 +559,6 @@ Generate ONLY the complete fixed Python code for {filename}, no markdown formatt
             "test_results": self.test_results,
             "files": list(self.fixed_code.keys())
         }
-    
-    def generate_regeneration_instructions(self) -> Dict[str, Any]:
-        """
-        Generate instructions for Agent B to regenerate code based on test failures
-        
-        Returns:
-            Dictionary containing regeneration instructions and feedback
-        """
-        if not self.test_analysis or self.test_analysis.get("overall_status") == "passed":
-            return {
-                "needs_regeneration": False,
-                "message": "No regeneration needed - all tests passed"
-            }
-        
-        failure_analysis = self.analyze_failures()
-        
-        prompt = f"""Based on the test failures, provide clear instructions for regenerating the code:
-
-Test Failures:
-{self._format_failures(self.test_analysis.get('failures', []))}
-
-Failure Analysis:
-{failure_analysis}
-
-Current Code Issues:
-{self._format_issues(failure_analysis.get('issues', []))}
-
-Provide JSON with:
-1. "regeneration_instructions": Clear instructions for what needs to be fixed
-2. "key_changes": List of specific changes needed
-3. "priority_fixes": Most critical issues to address first
-4. "architectural_notes": Any architectural changes needed
-"""
-        
-        try:
-            context = {
-                "test_analysis": self.test_analysis,
-                "failure_analysis": failure_analysis,
-                "code_package": self.code_package
-            }
-            
-            if self.langchain_wrapper:
-                response = self.langchain_wrapper.invoke(prompt, context=context)
-                if self.api_usage_tracker:
-                    token_usage = self.langchain_wrapper.get_token_usage()
-                    if token_usage:
-                        self.api_usage_tracker.track_usage("debugger", token_usage)
-            else:
-                if not hasattr(self.mcp_client, 'session') or self.mcp_client.session is None:
-                    self.mcp_client.connect()
-                response = self.mcp_client.send_request(prompt)
-                if self.api_usage_tracker:
-                    token_usage = self.mcp_client.get_token_usage()
-                    if token_usage:
-                        self.api_usage_tracker.track_usage("debugger", token_usage)
-                
-                # Extract text and log conversation
-                response_text = self.mcp_client.extract_text_from_response(response)
-                self.conversation_logger.log_interaction(
-                    prompt=prompt,
-                    response=response_text,
-                    metadata=self.mcp_client.get_token_usage()
-                )
-            
-            # Parse response
-            instructions = self._parse_regeneration_instructions(response_text)
-            instructions["needs_regeneration"] = True
-            instructions["original_architectural_plan"] = self.code_package.get("architectural_plan")
-            
-            self.logger.info("Generated regeneration instructions for Agent B")
-            return instructions
-            
-        except Exception as e:
-            self.logger.error(f"Error generating regeneration instructions: {str(e)}")
-            return {
-                "needs_regeneration": True,
-                "regeneration_instructions": f"Fix test failures: {str(e)}",
-                "key_changes": [],
-                "original_architectural_plan": self.code_package.get("architectural_plan")
-            }
-    
-    def pass_to_coder_for_regeneration(self) -> Dict[str, Any]:
-        """
-        Pass regeneration instructions back to Agent B (Coder)
-        
-        Returns:
-            Dictionary containing instructions for code regeneration
-        """
-        if not self.test_analysis:
-            raise ValueError("No test analysis available. Call receive_code_and_results() first.")
-        
-        if self.test_analysis.get("overall_status") == "passed":
-            self.logger.info("All tests passed - no regeneration needed")
-            return {"needs_regeneration": False}
-        
-        self.logger.info("Passing regeneration instructions to Coder agent")
-        return self.generate_regeneration_instructions()
     
     def pass_to_server(self) -> Dict[str, Any]:
         """

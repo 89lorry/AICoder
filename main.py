@@ -250,7 +250,11 @@ def main():
     try:
         # Simple user requirements - Architect will expand these into detailed specs
         requirements = """
-Create a calculator that allows me to do basic math operations
+I need a contact management system where I can:
+- Save people's names, email addresses, and phone numbers
+- Search for contacts by name
+- See all my contacts in alphabetical order
+- Remove contacts I don't need anymore
 """
         
         print("\n📋 Requirements:")
@@ -310,7 +314,10 @@ Create a calculator that allows me to do basic math operations
         print("📊 WORKFLOW RESULTS")
         print("=" * 60)
         print(f"Status: {result['final_status']}")
-        print(f"Iterations: {result['total_iterations']}")
+        
+        # Only show iterations if they exist (not present in error cases)
+        if 'total_iterations' in result:
+            print(f"Iterations: {result['total_iterations']}")
         
         if result['final_status'] == 'success':
             print("\n✅ Code generation and testing completed successfully!")

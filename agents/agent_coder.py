@@ -252,7 +252,7 @@ Start your response directly with the first line of Python code (imports or docs
     
     def generate_code(self) -> Dict[str, str]:
         """
-        Generate code based on architectural plan
+        OPTIMIZED: Generate ALL files in ONE API call
         
         Returns:
             Dictionary mapping filenames to generated code content
@@ -260,98 +260,13 @@ Start your response directly with the first line of Python code (imports or docs
         if not self.architectural_plan:
             raise ValueError("No architectural plan available. Call receive_architecture() first.")
         
-        self.logger.info("Starting code generation...")
+        self.logger.info("Generating ALL code files in ONE API call...")
         
-        # Generate each file
-        file_structure = self.architectural_plan.get("file_structure", {})
-        files = file_structure.get("files", {})
+        # Use combined generation method
+        self.generated_code = self._generate_all_files_combined()
         
-        # Default files if not specified
-        if not files:
-            files = {
-                "main.py": "Main entry point and application logic",
-                "utils.py": "Utility functions and helpers",
-                "test_data.py": "Test data and sample inputs",
-                "README.md": "Project documentation and usage instructions"
-            }
-        else:
-            # Always add README.md if not already present
-            if "README.md" not in files:
-                files["README.md"] = "Project documentation and usage instructions"
-        
-        # Generate code for each file
-        for filename, description in files.items():
-            if filename.endswith('.py'):
-                self.logger.info(f"Generating code for {filename}...")
-                code = self._generate_file_code(filename, description)
-                self.generated_code[filename] = code
-            elif filename.endswith('.md'):
-                self.logger.info(f"Generating documentation for {filename}...")
-                readme = self._generate_readme()
-                self.generated_code[filename] = readme
-        
-        self.logger.info(f"Code generation complete. Generated {len(self.generated_code)} files")
+        self.logger.info(f"Code generation complete. Generated {len(self.generated_code)} files in 1 API call")
         return self.generated_code
-    
-    def create_main_file(self) -> str:
-        """Generate main.py file"""
-        if "main.py" in self.generated_code:
-            return self.generated_code["main.py"]
-        
-        self.logger.info("Generating main.py...")
-        code = self._generate_file_code("main.py", "Main entry point and application logic")
-        self.generated_code["main.py"] = code
-        return code
-    
-    def create_utils_file(self) -> str:
-        """Generate utils.py file"""
-        if "utils.py" in self.generated_code:
-            return self.generated_code["utils.py"]
-        
-        self.logger.info("Generating utils.py...")
-        code = self._generate_file_code("utils.py", "Utility functions and helpers")
-        self.generated_code["utils.py"] = code
-        return code
-    
-    def create_test_data_file(self) -> str:
-        """Generate test_data.py file"""
-        if "test_data.py" in self.generated_code:
-            return self.generated_code["test_data.py"]
-        
-        self.logger.info("Generating test_data.py...")
-        code = self._generate_file_code("test_data.py", "Test data and sample inputs")
-        self.generated_code["test_data.py"] = code
-        return code
-    
-    def save_code_to_files(self) -> Dict[str, str]:
-        """
-        Save generated code to files using LocalServer
-        
-        Returns:
-            Dictionary mapping filenames to file paths
-        """
-        if not self.generated_code:
-            raise ValueError("No code generated. Call generate_code() first.")
-        
-        # Build code package
-        code_package = {
-            "project_name": "code_project",
-            "files": self.generated_code,
-            "entry_point": "main.py"
-        }
-        
-        # Receive and save code package
-        self.local_server.receive_code_package(code_package)
-        project_path = self.local_server.save_code_to_directory(code_package)
-        
-        # Build saved files dict
-        saved_files = {}
-        for filename in self.generated_code.keys():
-            filepath = os.path.join(project_path, filename)
-            saved_files[filename] = filepath
-            self.logger.info(f"Saved {filename} to {filepath}")
-        
-        return saved_files
     
     def get_code_package(self) -> Dict[str, Any]:
         """
@@ -511,6 +426,159 @@ Start your response directly with the first line of Python code (imports or docs
             self.logger.error(f"Error generating code for {filename}: {str(e)}")
             # Return a minimal valid Python file as fallback
             return f'"""\n{description}\n"""\n\n# TODO: Implement based on requirements\n'
+    
+    def _generate_all_files_combined(self) -> Dict[str, str]:
+        """
+        OPTIMIZED: Generate ALL code files in ONE API call (like Architect)
+        
+        Returns:
+            Dictionary mapping filenames to generated code content
+        """
+        file_structure = self.architectural_plan.get("file_structure", {})
+        files = file_structure.get("files", {})
+        
+        # Default files if not specified
+        if not files:
+            files = {
+                "main.py": "Main entry point and application logic",
+                "utils.py": "Utility functions and helpers",
+                "test_data.py": "Test data and sample inputs",
+                "README.md": "Project documentation"
+            }
+        
+        # Build combined prompt for all files
+        prompt = f"""Generate ALL code files for this Python project in ONE response as JSON.
+
+Architectural Context:
+{self._format_architectural_context()}
+
+Detailed Plan:
+{self.architectural_plan.get('detailed_plan', {})}
+
+FILES TO GENERATE:
+{chr(10).join(f'- {fname}: {desc}' for fname, desc in files.items())}
+
+CRITICAL FILE COORDINATION RULES:
+1. main.py: Include ONLY classes/functions needed for this project
+   - ALL application classes defined here
+   - This is the single source of truth
+   - NO extra unrelated classes
+
+2. utils.py: ONLY helper functions, NO class definitions
+   - Import from main.py if needed: "from main import ClassName"
+   - Keep minimal and focused
+
+3. test_data.py: ONLY sample data, NO class definitions  
+   - Import from "main": "from main import ClassName"
+   - NO hypothetical module names
+
+4. README.md: Project documentation in markdown
+
+RESPONSE FORMAT - Return ONLY valid JSON (no markdown):
+{{
+  "main.py": "complete Python code here",
+  "utils.py": "complete Python code here",
+  "test_data.py": "complete Python code here",
+  "README.md": "markdown content here"
+}}
+
+CRITICAL: 
+- Return ONLY parseable JSON starting with {{ and ending with }}
+- NO markdown code blocks (```json or ```)
+- NO explanations outside the JSON
+- Each file's code should be a complete, valid string
+- Escape quotes properly in JSON strings
+"""
+        
+        try:
+            if self.langchain_wrapper:
+                response = self.langchain_wrapper.invoke(prompt)
+                if self.api_usage_tracker:
+                    token_usage = self.langchain_wrapper.get_token_usage()
+                    if token_usage:
+                        self.api_usage_tracker.track_usage("coder", token_usage)
+                # Log conversation
+                response_text = response if isinstance(response, str) else self.mcp_client.extract_text_from_response(response)
+                self.conversation_logger.log_interaction(
+                    prompt=prompt,
+                    response=response_text,
+                    metadata=self.langchain_wrapper.get_token_usage()
+                )
+            else:
+                if not hasattr(self.mcp_client, 'session') or self.mcp_client.session is None:
+                    self.mcp_client.connect()
+                response = self.mcp_client.send_request(prompt)
+                if self.api_usage_tracker:
+                    token_usage = self.mcp_client.get_token_usage()
+                    if token_usage:
+                        self.api_usage_tracker.track_usage("coder", token_usage)
+                # Log conversation
+                response_text = self.mcp_client.extract_text_from_response(response)
+                self.conversation_logger.log_interaction(
+                    prompt=prompt,
+                    response=response_text,
+                    metadata=self.mcp_client.get_token_usage()
+                )
+            
+            # Parse JSON response
+            import json
+            if isinstance(response, dict):
+                response_text = self.mcp_client.extract_text_from_response(response)
+            else:
+                response_text = str(response)
+            
+            # Extract JSON from response
+            if '{' in response_text and '}' in response_text:
+                start = response_text.find('{')
+                end = response_text.rfind('}') + 1
+                json_str = response_text[start:end]
+                generated_files = json.loads(json_str)
+                
+                # Validate all expected files are present
+                for filename in files.keys():
+                    if filename not in generated_files:
+                        self.logger.warning(f"Missing {filename}, generating fallback")
+                        if filename.endswith('.py'):
+                            generated_files[filename] = f'"""{files[filename]}"""\n\n# TODO: Implement\n'
+                        else:
+                            generated_files[filename] = f"# {filename}\n\nDocumentation pending."
+                
+                return generated_files
+            
+            # Fallback if JSON parsing fails
+            self.logger.warning("Failed to parse JSON, falling back to individual generation")
+            return self._generate_files_individually()
+            
+        except Exception as e:
+            self.logger.error(f"Error in combined generation: {str(e)}")
+            self.logger.info("Falling back to individual file generation")
+            return self._generate_files_individually()
+    
+    def _generate_files_individually(self) -> Dict[str, str]:
+        """Fallback: Generate files individually (original method)"""
+        file_structure = self.architectural_plan.get("file_structure", {})
+        files = file_structure.get("files", {})
+        
+        if not files:
+            files = {
+                "main.py": "Main entry point and application logic",
+                "utils.py": "Utility functions and helpers",
+                "test_data.py": "Test data and sample inputs",
+                "README.md": "Project documentation"
+            }
+        
+        generated = {}
+        for filename, description in files.items():
+            if filename.endswith('.py'):
+                self.logger.info(f"Generating code for {filename}...")
+                code = self._generate_file_code(filename, description)
+                generated[filename] = code
+            elif filename.endswith('.md'):
+                self.logger.info(f"Generating documentation for {filename}...")
+                readme = self._generate_readme()
+                generated[filename] = readme
+        
+        return generated
     
     def _format_architectural_context(self) -> str:
         """Format architectural plan for context in prompts"""
