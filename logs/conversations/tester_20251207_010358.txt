@@ -1,0 +1,858 @@
+================================================================================
+Conversation Log: TESTER
+Session ID: 20251207_010358
+Started: 2025-12-07 01:03:58
+================================================================================
+
+
+────────────────────────────────────────────────────────────────────────────────
+Timestamp: 2025-12-07 01:04:43
+Metadata: {'prompt_tokens': 2645, 'completion_tokens': 5899, 'total_tokens': 8544}
+
+[PROMPT]
+--------------------------------------------------------------------------------
+Generate comprehensive pytest test cases for the following Python code files:
+
+Code Files:
+
+=== main.py ===
+import json
+
+class Contact:
+    def __init__(self, name, email, phone):
+        self.name = name
+        self.email = email
+        self.phone = phone
+
+    def __str__(self):
+        return f"Name: {self.name}, Email: {self.email}, Phone: {self.phone}"
+
+    def __lt__(self, other):
+        return self.name < other.name
+
+class ContactManager:
+    def __init__(self, filename="contacts.json"):
+        self.filename = filename
+        self.contacts = self.load_contacts()
+
+    def load_contacts(self):
+        try:
+            with open(self.filename, 'r') as f:
+                data = json.load(f)
+                return [Contact(c['name'], c['email'], c['phone']) for c in data]
+        except FileNotFoundError:
+            return []
+
+    def save_contacts(self):
+        with open(self.filename, 'w') as f:
+            json.dump([{'name': c.name, 'email': c.email, 'phone': c.phone} for c in self.contacts], f, indent=4)
+
+    def add_contact(self, name, email, phone):
+        new_contact = Contact(name, email, phone)
+        self.contacts.append(new_contact)
+        self.save_contacts()
+        print(f"Contact '{name}' added.")
+
+    def search_contact(self, name):
+        found_contacts = [c for c in self.contacts if name.lower() in c.name.lower()]
+        return found_contacts
+
+    def view_all_contacts(self):
+        if not self.contacts:
+            print("No contacts available.")
+            return
+        sorted_contacts = sorted(self.contacts)
+        print("\n--- All Contacts ---")
+        for contact in sorted_contacts:
+            print(contact)
+        print("--------------------")
+
+    def remove_contact(self, name):
+        initial_count = len(self.contacts)
+        self.contacts = [c for c in self.contacts if c.name.lower() != name.lower()]
+        if len(self.contacts) < initial_count:
+            self.save_contacts()
+            print(f"Contact '{name}' removed.")
+        else:
+            print(f"Contact '{name}' not found.")
+
+def display_menu():
+    print("\nContact Management System")
+    print("1. Add Contact")
+    print("2. Search Contact")
+    print("3. View All Contacts")
+    print("4. Remove Contact")
+    print("5. Exit")
+
+def main():
+    manager = ContactManager()
+
+    while True:
+        display_menu()
+        choice = input("Enter your choice: ")
+
+        if choice == '1':
+            name = input("Enter name: ")
+            email = input("Enter email: ")
+            phone = input("Enter phone: ")
+            manager.add_contact(name, email, phone)
+        elif choice == '2':
+            name = input("Enter name to search: ")
+            found = manager.search_contact(name)
+            if found:
+                print("\n--- Search Results ---")
+                for contact in found:
+                    print(contact)
+                print("--------------------")
+            else:
+                print("No contacts found matching your search.")
+        elif choice == '3':
+            manager.view_all_contacts()
+        elif choice == '4':
+            name = input("Enter name of contact to remove: ")
+            manager.remove_contact(name)
+        elif choice == '5':
+            print("Exiting Contact Management System. Goodbye!")
+            break
+        else:
+            print("Invalid choice. Please try again.")
+
+if __name__ == "__main__":
+    main()
+
+
+
+=== utils.py ===
+# No utility functions are strictly necessary for this basic implementation.
+# If more complex logic were needed (e.g., email validation, phone formatting),
+# they would be placed here.
+
+
+
+=== test_data.py ===
+from main import Contact, ContactManager
+
+# Sample contacts for testing
+sample_contacts_data = [
+    {"name": "Alice Smith", "email": "alice.smith@example.com", "phone": "123-456-7890"},
+    {"name": "Bob Johnson", "email": "bob.j@example.com", "phone": "987-654-3210"},
+    {"name": "Charlie Brown", "email": "charlie.b@example.com", "phone": "555-123-4567"},
+    {"name": "Alice Wonderland", "email": "alice.w@example.com", "phone": "111-222-3333"}
+]
+
+def create_test_manager():
+    manager = ContactManager("test_contacts.json")
+    # Clear any existing test data
+    manager.contacts = []
+    manager.save_contacts()
+
+    # Add sample contacts
+    for data in sample_contacts_data:
+        manager.add_contact(data['name'], data['email'], data['phone'])
+    return manager
+
+
+
+=== README.md ===
+# Contact Management System
+
+This is a simple Python-based Contact Management System that allows you to:
+
+- **Save contacts**: Store names, email addresses, and phone numbers.
+- **Search contacts**: Find contacts by name.
+- **View all contacts**: See all your contacts listed alphabetically.
+- **Remove contacts**: Delete contacts you no longer need.
+
+## Features
+
+- **Data Persistence**: Contacts are saved to a `contacts.json` file, so your data is preserved between sessions.
+- **User-friendly Interface**: A simple command-line menu guides you through the operations.
+- **Alphabetical Sorting**: All contacts are displayed in alphabetical order by name.
+
+## How to Run
+
+1.  **Save the files**: Make sure you have the following files in the same directory:
+    *   `main.py`
+    *   `utils.py`
+    *   `test_data.py`
+    *   `README.md`
+
+2.  **Install Python**: Ensure you have Python 3 installed on your system.
+
+3.  **Run the application**: Open your terminal or command prompt, navigate to the directory where you saved the files, and run the main script:
+    ```bash
+    python main.py
+    ```
+
+4.  **Follow the prompts**: The application will present a menu. Enter the number corresponding to the action you want to perform.
+
+## Project Structure
+
+*   **`main.py`**: The core of the application. It contains the `Contact` class and the `ContactManager` class, which handles all the logic for adding, searching, viewing, and removing contacts. It also includes the main application loop and menu display.
+*   **`utils.py`**: This file is intended for utility functions. In this basic version, it's empty, but it's structured to accommodate helper functions if the system were to become more complex (e.g., for input validation).
+*   **`test_data.py`**: Contains sample data and a function (`create_test_manager`) to easily set up a `ContactManager` with pre-defined contacts for testing purposes. This file is not directly used by the main application but is useful for development and verification.
+*   **`contacts.json`**: This file will be automatically created and updated by `main.py` to store your contact information. It's a JSON file.
+
+## Example Usage
+
+When you run `python main.py`, you will see:
+
+```
+Contact Management System
+1. Add Contact
+2. Search Contact
+3. View All Contacts
+4. Remove Contact
+5. Exit
+Enter your choice: 
+```
+
+**Adding a Contact:**
+
+```
+Enter your choice: 1
+Enter name: John Doe
+Enter email: john.doe@example.com
+Enter phone: 555-111-2222
+Contact 'John Doe' added.
+```
+
+**Viewing All Contacts:**
+
+```
+Enter your choice: 3
+
+--- All Contacts ---
+Name: Alice Smith, Email: alice.smith@example.com, Phone: 123-456-7890
+Name: Alice Wonderland, Email: alice.w@example.com, Phone: 111-222-3333
+Name: Bob Johnson, Email: bob.j@example.com, Phone: 987-654-3210
+Name: Charlie Brown, Email: charlie.b@example.com, Phone: 555-123-4567
+--------------------
+```
+
+**Searching for a Contact:**
+
+```
+Enter your choice: 2
+Enter name to search: Alice
+
+--- Search Results ---
+Name: Alice Smith, Email: alice.smith@example.com, Phone: 123-456-7890
+Name: Alice Wonderland, Email: alice.w@example.com, Phone: 111-222-3333
+--------------------
+```
+
+**Removing a Contact:**
+
+```
+Enter your choice: 4
+Enter name of contact to remove: Bob Johnson
+Contact 'Bob Johnson' removed.
+```
+
+
+
+Architectural Plan:
+No architectural plan details
+
+Requirements:
+1. Create comprehensive test cases using pytest
+2. Test all functions, classes, and main logic
+3. Include edge cases and error handling tests
+4. Use fixtures where appropriate
+5. Follow pytest best practices
+6. Include docstrings explaining what each test does
+7. Make tests readable and maintainable
+8. Import functions/classes directly and test them - do NOT test main() functions or if __name__ blocks
+
+CRITICAL UI/LOOP TESTING RULES (MUST FOLLOW):
+9. **DO NOT** write tests that call methods containing infinite loops (while True, while running, etc.)
+10. **DO NOT** test UI.run(), main_loop(), event_loop() or similar continuous execution methods
+11. **DO NOT** test interactive CLI methods that block waiting for user input
+12. If the code has UI classes (UserInterface, CLI, Menu, etc.):
+   - Test individual UI methods (display_menu, add_item_ui, etc.) that don't loop
+   - Use monkeypatch to mock input() and print() functions
+   - Mock methods must provide ALL expected inputs INCLUDING exit conditions
+   - DO NOT call the main run() or start() methods that contain loops
+13. Add @pytest.mark.timeout(5) decorator to any test that uses mocked input/print
+14. Tests must be able to complete within 5 seconds
+
+Examples of FORBIDDEN test patterns:
+- ui.run()  # FORBIDDEN - infinite loop
+- app.main_loop()  # FORBIDDEN - blocks forever
+- interface.start()  # FORBIDDEN - continuous execution
+- while True in test body  # FORBIDDEN
+
+Examples of ALLOWED test patterns:
+- ui.add_contact_ui()  # OK - single action method
+- ui.display_menu()  # OK - display only
+- menu.process_choice('1')  # OK - single choice processing
+
+Generate a complete test file named test_main.py that can be executed with pytest.
+Include all necessary imports and setup.
+
+CRITICAL: Your response must contain ONLY raw Python test code.
+DO NOT wrap the code in markdown code blocks (```python or ```).
+DO NOT include any explanations, comments outside the code, or formatting.
+Start your response directly with the first line of Python code (imports).
+
+
+[RESPONSE]
+--------------------------------------------------------------------------------
+import pytest
+import json
+import os
+from unittest.mock import patch, MagicMock
+
+from main import Contact, ContactManager, display_menu
+
+# Define the test filename
+TEST_FILENAME = "test_contacts.json"
+
+@pytest.fixture
+def cleanup_test_file():
+    """Fixture to ensure the test contacts file is removed after each test."""
+    yield
+    if os.path.exists(TEST_FILENAME):
+        os.remove(TEST_FILENAME)
+
+@pytest.fixture
+def sample_contacts_data():
+    """Fixture providing sample contact data."""
+    return [
+        {"name": "Alice Smith", "email": "alice.smith@example.com", "phone": "123-456-7890"},
+        {"name": "Bob Johnson", "email": "bob.j@example.com", "phone": "987-654-3210"},
+        {"name": "Charlie Brown", "email": "charlie.b@example.com", "phone": "555-123-4567"},
+        {"name": "Alice Wonderland", "email": "alice.w@example.com", "phone": "111-222-3333"}
+    ]
+
+@pytest.fixture
+def contact_manager(cleanup_test_file, sample_contacts_data):
+    """Fixture to create a ContactManager with sample data."""
+    manager = ContactManager(TEST_FILENAME)
+    # Ensure the manager starts with an empty list before adding sample data
+    manager.contacts = []
+    manager.save_contacts()
+    for data in sample_contacts_data:
+        manager.add_contact(data['name'], data['email'], data['phone'])
+    return manager
+
+# --- Tests for Contact class ---
+
+def test_contact_init():
+    """Test the initialization of the Contact class."""
+    contact = Contact("John Doe", "john.doe@example.com", "123-456-7890")
+    assert contact.name == "John Doe"
+    assert contact.email == "john.doe@example.com"
+    assert contact.phone == "123-456-7890"
+
+def test_contact_str():
+    """Test the string representation of the Contact class."""
+    contact = Contact("Jane Doe", "jane.doe@example.com", "987-654-3210")
+    expected_str = "Name: Jane Doe, Email: jane.doe@example.com, Phone: 987-654-3210"
+    assert str(contact) == expected_str
+
+def test_contact_lt():
+    """Test the less than comparison for Contact objects (alphabetical by name)."""
+    contact1 = Contact("Alice", "a@example.com", "111")
+    contact2 = Contact("Bob", "b@example.com", "222")
+    contact3 = Contact("Alice", "a2@example.com", "333")
+
+    assert contact1 < contact2
+    assert not (contact2 < contact1)
+    assert not (contact1 < contact3) # Equal names, order doesn't matter for <
+
+# --- Tests for ContactManager class ---
+
+def test_contact_manager_init_empty(cleanup_test_file):
+    """Test ContactManager initialization when the contacts file does not exist."""
+    manager = ContactManager(TEST_FILENAME)
+    assert manager.filename == TEST_FILENAME
+    assert manager.contacts == []
+
+def test_contact_manager_init_with_data(cleanup_test_file, sample_contacts_data):
+    """Test ContactManager initialization when the contacts file exists with data."""
+    # Manually create the file with data
+    with open(TEST_FILENAME, 'w') as f:
+        json.dump([{'name': c['name'], 'email': c['email'], 'phone': c['phone']} for c in sample_contacts_data], f, indent=4)
+
+    manager = ContactManager(TEST_FILENAME)
+    assert manager.filename == TEST_FILENAME
+    assert len(manager.contacts) == len(sample_contacts_data)
+    # Check if the loaded contacts are instances of Contact
+    for contact in manager.contacts:
+        assert isinstance(contact, Contact)
+    # Check if the data matches
+    loaded_names = sorted([c.name for c in manager.contacts])
+    sample_names = sorted([data['name'] for data in sample_contacts_data])
+    assert loaded_names == sample_names
+
+def test_contact_manager_load_contacts_file_not_found(cleanup_test_file):
+    """Test load_contacts when the file does not exist."""
+    manager = ContactManager("non_existent_file.json")
+    assert manager.load_contacts() == []
+
+def test_contact_manager_save_contacts(cleanup_test_file):
+    """Test saving contacts to a file."""
+    manager = ContactManager(TEST_FILENAME)
+    contact1 = Contact("Test User 1", "test1@example.com", "111-111-1111")
+    contact2 = Contact("Test User 2", "test2@example.com", "222-222-2222")
+    manager.contacts = [contact1, contact2]
+    manager.save_contacts()
+
+    assert os.path.exists(TEST_FILENAME)
+    with open(TEST_FILENAME, 'r') as f:
+        data = json.load(f)
+    assert len(data) == 2
+    assert {"name": "Test User 1", "email": "test1@example.com", "phone": "111-111-1111"} in data
+    assert {"name": "Test User 2", "email": "test2@example.com", "phone": "222-222-2222"} in data
+
+def test_contact_manager_add_contact(cleanup_test_file, capsys):
+    """Test adding a new contact."""
+    manager = ContactManager(TEST_FILENAME)
+    manager.add_contact("New Contact", "new@example.com", "555-555-5555")
+
+    assert len(manager.contacts) == 1
+    new_contact = manager.contacts[0]
+    assert isinstance(new_contact, Contact)
+    assert new_contact.name == "New Contact"
+    assert new_contact.email == "new@example.com"
+    assert new_contact.phone == "555-555-5555"
+
+    # Check if saved to file
+    with open(TEST_FILENAME, 'r') as f:
+        data = json.load(f)
+    assert len(data) == 1
+    assert data[0]['name'] == "New Contact"
+
+    # Check printed output
+    captured = capsys.readouterr()
+    assert "Contact 'New Contact' added." in captured.out
+
+def test_contact_manager_search_contact_found(contact_manager, sample_contacts_data):
+    """Test searching for a contact that exists."""
+    # Search for a name that is a substring of multiple contacts
+    found = contact_manager.search_contact("Alice")
+    assert len(found) == 2
+    names_found = sorted([c.name for c in found])
+    assert "Alice Smith" in names_found
+    assert "Alice Wonderland" in names_found
+
+    # Search for an exact name
+    found_exact = contact_manager.search_contact("Bob Johnson")
+    assert len(found_exact) == 1
+    assert found_exact[0].name == "Bob Johnson"
+
+    # Search case-insensitively
+    found_case_insensitive = contact_manager.search_contact("charlie brown")
+    assert len(found_case_insensitive) == 1
+    assert found_case_insensitive[0].name == "Charlie Brown"
+
+def test_contact_manager_search_contact_not_found(contact_manager):
+    """Test searching for a contact that does not exist."""
+    found = contact_manager.search_contact("Non Existent Person")
+    assert found == []
+
+def test_contact_manager_view_all_contacts_empty(capsys):
+    """Test viewing all contacts when there are no contacts."""
+    manager = ContactManager(TEST_FILENAME)
+    manager.view_all_contacts()
+    captured = capsys.readouterr()
+    assert "No contacts available." in captured.out
+
+def test_contact_manager_view_all_contacts_with_data(contact_manager, sample_contacts_data, capsys):
+    """Test viewing all contacts when there are contacts."""
+    manager = ContactManager(TEST_FILENAME) # Re-initialize to load from file
+    manager.view_all_contacts()
+    captured = capsys.readouterr()
+
+    assert "\n--- All Contacts ---" in captured.out
+    assert "--------------------" in captured.out
+
+    # Check if all contacts are printed and sorted
+    sorted_sample_names = sorted([data['name'] for data in sample_contacts_data])
+    printed_lines = captured.out.splitlines()
+    contact_lines = [line for line in printed_lines if line.startswith("Name:")]
+
+    assert len(contact_lines) == len(sample_contacts_data)
+
+    printed_names = []
+    for line in contact_lines:
+        # Extract name from the printed string
+        name_start = line.find("Name: ") + len("Name: ")
+        name_end = line.find(", Email:")
+        printed_names.append(line[name_start:name_end])
+
+    assert sorted(printed_names) == sorted_sample_names
+
+def test_contact_manager_remove_contact_found(contact_manager, sample_contacts_data, capsys):
+    """Test removing a contact that exists."""
+    contact_to_remove = "Bob Johnson"
+    initial_count = len(contact_manager.contacts)
+
+    contact_manager.remove_contact(contact_to_remove)
+
+    assert len(contact_manager.contacts) == initial_count - 1
+    # Check if the contact is actually removed
+    names = [c.name for c in contact_manager.contacts]
+    assert contact_to_remove not in names
+
+    # Check if saved to file
+    manager_reloaded = ContactManager(TEST_FILENAME)
+    names_reloaded = [c.name for c in manager_reloaded.contacts]
+    assert contact_to_remove not in names_reloaded
+
+    # Check printed output
+    captured = capsys.readouterr()
+    assert f"Contact '{contact_to_remove}' removed." in captured.out
+
+def test_contact_manager_remove_contact_not_found(contact_manager, capsys):
+    """Test removing a contact that does not exist."""
+    initial_count = len(contact_manager.contacts)
+    contact_manager.remove_contact("Non Existent Person")
+
+    assert len(contact_manager.contacts) == initial_count # Count should not change
+
+    # Check printed output
+    captured = capsys.readouterr()
+    assert "Contact 'Non Existent Person' not found." in captured.out
+
+def test_contact_manager_remove_contact_case_insensitive(contact_manager, capsys):
+    """Test removing a contact with case-insensitive name matching."""
+    contact_to_remove = "alice smith" # Lowercase
+    initial_count = len(contact_manager.contacts)
+
+    contact_manager.remove_contact(contact_to_remove)
+
+    assert len(contact_manager.contacts) == initial_count - 1
+    names = [c.name for c in contact_manager.contacts]
+    assert "Alice Smith" not in names
+
+    captured = capsys.readouterr()
+    assert "Contact 'alice smith' removed." in captured.out
+
+# --- Tests for display_menu function ---
+
+def test_display_menu(capsys):
+    """Test that display_menu prints the correct menu options."""
+    display_menu()
+    captured = capsys.readouterr()
+    assert "\nContact Management System" in captured.out
+    assert "1. Add Contact" in captured.out
+    assert "2. Search Contact" in captured.out
+    assert "3. View All Contacts" in captured.out
+    assert "4. Remove Contact" in captured.out
+    assert "5. Exit" in captured.out
+
+# --- Tests for main logic (using monkeypatch for input/print) ---
+
+@pytest.mark.timeout(5)
+def test_main_add_contact(monkeypatch, cleanup_test_file):
+    """Test the add contact flow in the main application."""
+    mock_inputs = iter([
+        '1',  # Choice: Add Contact
+        'Test Name',
+        'test@example.com',
+        '123-456-7890',
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    manager = ContactManager(TEST_FILENAME) # Ensure it's clean
+    manager.contacts = []
+    manager.save_contacts()
+
+    from main import main
+    main()
+
+    # Verify contact was added and saved
+    manager_reloaded = ContactManager(TEST_FILENAME)
+    assert len(manager_reloaded.contacts) == 1
+    added_contact = manager_reloaded.contacts[0]
+    assert added_contact.name == "Test Name"
+    assert added_contact.email == "test@example.com"
+    assert added_contact.phone == "123-456-7890"
+
+@pytest.mark.timeout(5)
+def test_main_search_contact_found(monkeypatch, contact_manager, capsys):
+    """Test the search contact flow in the main application."""
+    # Use a contact that exists in the pre-populated manager
+    search_term = "Alice"
+    mock_inputs = iter([
+        '2',  # Choice: Search Contact
+        search_term,
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    captured = capsys.readouterr()
+    assert f"Name: Alice Smith" in captured.out
+    assert f"Name: Alice Wonderland" in captured.out
+    assert "--- Search Results ---" in captured.out
+
+@pytest.mark.timeout(5)
+def test_main_search_contact_not_found(monkeypatch, contact_manager, capsys):
+    """Test searching for a contact that doesn't exist in the main application."""
+    search_term = "NonExistent"
+    mock_inputs = iter([
+        '2',  # Choice: Search Contact
+        search_term,
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    captured = capsys.readouterr()
+    assert "No contacts found matching your search." in captured.out
+
+@pytest.mark.timeout(5)
+def test_main_view_all_contacts(monkeypatch, contact_manager, capsys):
+    """Test viewing all contacts in the main application."""
+    mock_inputs = iter([
+        '3',  # Choice: View All Contacts
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    captured = capsys.readouterr()
+    assert "\n--- All Contacts ---" in captured.out
+    assert "Name: Alice Smith" in captured.out
+    assert "Name: Bob Johnson" in captured.out
+    assert "Name: Charlie Brown" in captured.out
+    assert "Name: Alice Wonderland" in captured.out
+    assert "--------------------" in captured.out
+
+@pytest.mark.timeout(5)
+def test_main_remove_contact_found(monkeypatch, contact_manager, capsys):
+    """Test removing a contact in the main application."""
+    contact_to_remove = "Bob Johnson"
+    mock_inputs = iter([
+        '4',  # Choice: Remove Contact
+        contact_to_remove,
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    captured = capsys.readouterr()
+    assert f"Contact '{contact_to_remove}' removed." in captured.out
+
+    # Verify removal by loading again
+    manager_reloaded = ContactManager(TEST_FILENAME)
+    names = [c.name for c in manager_reloaded.contacts]
+    assert contact_to_remove not in names
+
+@pytest.mark.timeout(5)
+def test_main_remove_contact_not_found(monkeypatch, contact_manager, capsys):
+    """Test removing a contact that doesn't exist in the main application."""
+    contact_to_remove = "NonExistent"
+    mock_inputs = iter([
+        '4',  # Choice: Remove Contact
+        contact_to_remove,
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    captured = capsys.readouterr()
+    assert f"Contact '{contact_to_remove}' not found." in captured.out
+
+@pytest.mark.timeout(5)
+def test_main_invalid_choice(monkeypatch, capsys):
+    """Test handling of an invalid menu choice."""
+    mock_inputs = iter([
+        '99', # Invalid choice
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    captured = capsys.readouterr()
+    assert "Invalid choice. Please try again." in captured.out
+    assert "Exiting Contact Management System. Goodbye!" in captured.out
+
+@pytest.mark.timeout(5)
+def test_main_exit(monkeypatch, capsys):
+    """Test the exit option in the main application."""
+    mock_inputs = iter(['5']) # Choice: Exit
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    # We don't need to assert anything about the output here,
+    # just that the loop terminates gracefully.
+    # The fact that the test finishes without error is sufficient.
+    main()
+
+# Test for the case where contacts.json is empty or malformed (though json.load handles malformed)
+@pytest.mark.timeout(5)
+def test_main_starts_with_empty_file(monkeypatch, cleanup_test_file, capsys):
+    """Test that main can start even if the contacts file is empty or missing."""
+    # Ensure the file is empty or doesn't exist
+    if os.path.exists(TEST_FILENAME):
+        os.remove(TEST_FILENAME)
+
+    mock_inputs = iter([
+        '1', # Add contact
+        'Test Empty',
+        'empty@example.com',
+        '000-000-0000',
+        '3', # View all
+        '5'  # Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    captured = capsys.readouterr()
+    assert "Contact 'Test Empty' added." in captured.out
+    assert "Name: Test Empty" in captured.out
+
+# Test for edge case: empty strings for contact details
+@pytest.mark.timeout(5)
+def test_main_add_contact_empty_details(monkeypatch, cleanup_test_file, capsys):
+    """Test adding a contact with empty strings for name, email, or phone."""
+    mock_inputs = iter([
+        '1',  # Choice: Add Contact
+        '',   # Empty name
+        '',   # Empty email
+        '',   # Empty phone
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    # Verify contact was added with empty strings
+    manager_reloaded = ContactManager(TEST_FILENAME)
+    assert len(manager_reloaded.contacts) == 1
+    added_contact = manager_reloaded.contacts[0]
+    assert added_contact.name == ""
+    assert added_contact.email == ""
+    assert added_contact.phone == ""
+
+    captured = capsys.readouterr()
+    assert "Contact '' added." in captured.out
+
+# Test for edge case: searching for an empty string
+@pytest.mark.timeout(5)
+def test_main_search_empty_string(monkeypatch, contact_manager, capsys):
+    """Test searching for an empty string."""
+    mock_inputs = iter([
+        '2',  # Choice: Search Contact
+        '',   # Empty search term
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    captured = capsys.readouterr()
+    # Searching for an empty string should match all contacts because "" is in all strings.
+    assert "--- Search Results ---" in captured.out
+    assert len(captured.out.splitlines()) > 5 # Expecting more than just menu lines
+
+# Test for edge case: removing an empty string name
+@pytest.mark.timeout(5)
+def test_main_remove_empty_string(monkeypatch, contact_manager, capsys):
+    """Test removing a contact with an empty string name."""
+    # First, add a contact with an empty name
+    manager = ContactManager(TEST_FILENAME)
+    manager.add_contact("", "empty@example.com", "000-000-0000")
+
+    mock_inputs = iter([
+        '4',  # Choice: Remove Contact
+        '',   # Empty name to remove
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    captured = capsys.readouterr()
+    assert "Contact '' removed." in captured.out
+
+    # Verify removal
+    manager_reloaded = ContactManager(TEST_FILENAME)
+    names = [c.name for c in manager_reloaded.contacts]
+    assert "" not in names
+
+# Test for edge case: removing a contact that was added with an empty name
+@pytest.mark.timeout(5)
+def test_main_remove_added_empty_name_contact(monkeypatch, cleanup_test_file, capsys):
+    """Test removing a contact that was added with an empty name."""
+    # Add a contact with an empty name first
+    manager = ContactManager(TEST_FILENAME)
+    manager.add_contact("", "empty@example.com", "000-000-0000")
+    manager.save_contacts()
+
+    mock_inputs = iter([
+        '4',  # Choice: Remove Contact
+        '',   # Empty name to remove
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    captured = capsys.readouterr()
+    assert "Contact '' removed." in captured.out
+
+    # Verify removal
+    manager_reloaded = ContactManager(TEST_FILENAME)
+    names = [c.name for c in manager_reloaded.contacts]
+    assert "" not in names
+
+# Test for edge case: adding a contact with a name that already exists (should be allowed)
+@pytest.mark.timeout(5)
+def test_main_add_duplicate_name(monkeypatch, contact_manager, capsys):
+    """Test adding a contact with a name that already exists."""
+    duplicate_name = "Alice Smith"
+    initial_count = len(contact_manager.contacts)
+
+    mock_inputs = iter([
+        '1',  # Choice: Add Contact
+        duplicate_name,
+        'new.alice@example.com',
+        '999-999-9999',
+        '5'   # Choice: Exit
+    ])
+    monkeypatch.setattr('builtins.input', lambda _: next(mock_inputs))
+
+    from main import main
+    main()
+
+    # Verify that the contact was added, increasing the count
+    manager_reloaded = ContactManager(TEST_FILENAME)
+    assert len(manager_reloaded.contacts) == initial_count + 1
+
+    # Check if the new contact is present
+    found_new = False
+    for contact in manager_reloaded.contacts:
+        if contact.name == duplicate_name and contact.email == 'new.alice@example.com':
+            found_new = True
+            break
+    assert found_new
+
+    captured = capsys.readouterr()
+    assert f"Contact '{duplicate_name}' added." in captured.out
+```
+────────────────────────────────────────────────────────────────────────────────

@@ -106,7 +106,19 @@ Provide a comprehensive JSON response with ALL of the following sections:
             "purpose": "what it does",
             "classes": ["Class1", "Class2"],
             "functions": ["func1", "func2"],
-            "key_logic": "main logic flow"
+            "key_logic": "main logic flow",
+            "api_contracts": {{
+                "ClassName.data_method": "RETURNS data/list/dict (does NOT print)",
+                "ClassName.query_method": "RETURNS results (does NOT print)",
+                "ClassName.action_method": "Can print confirmation, RETURNS success status"
+            }},
+            "design_principles": [
+                "Data retrieval methods RETURN values",
+                "Query/search methods RETURN results",
+                "Action methods can print status, but RETURN success indicators",
+                "main() or display functions handle printing",
+                "Separation: data layer returns, presentation layer prints"
+            ]
         }},
         "utils.py": {{
             "purpose": "what it does",

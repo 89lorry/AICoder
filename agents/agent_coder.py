@@ -342,12 +342,70 @@ Architectural Context:
 File-Specific Plan:
 {file_plan if file_plan else 'No specific plan provided'}
 
+⚠️ API CONTRACT RULES (CRITICAL - READ FIRST):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORE PRINCIPLE: Separate Data Logic from Presentation Logic
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. DATA METHODS (CRUD, Queries, Calculations):
+   ✓ RETURN the data/results
+   ✗ DO NOT print the data
+   
+   Examples:
+   - search_items() → RETURNS list of found items
+   - get_all_records() → RETURNS list of records
+   - calculate_total() → RETURNS numeric result
+   - find_by_id() → RETURNS object or None
+   - process_data() → RETURNS processed data
+
+2. ACTION METHODS (Create, Update, Delete):
+   ✓ Can print confirmation/status messages
+   ✓ MUST RETURN success indicator (bool, status code, or object)
+   
+   Examples:
+   - add_item() → Prints "Item added", RETURNS True/object
+   - delete_record() → Prints "Deleted", RETURNS success status
+   - update_data() → Prints "Updated", RETURNS updated object
+
+3. PRESENTATION/DISPLAY METHODS:
+   ✓ Print formatted output for user
+   ✓ Can return None or void
+   
+   Examples:
+   - display_results() → Prints formatted data
+   - show_menu() → Prints menu options
+   - print_report() → Prints formatted report
+
+4. MAIN/CONTROLLER FUNCTIONS:
+   ✓ Coordinate data methods and display methods
+   ✓ Handle user interaction and printing
+   
+   Pattern:
+   ```python
+   def main():
+       # Get data
+       results = manager.search_items(query)
+       # Display data
+       if results:
+           print(f"Found {len(results)} items:")
+           for item in results:
+               print(item)
+   ```
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WHY THIS MATTERS FOR TESTING:
+- Tests verify data operations by checking RETURN values
+- If methods print instead of return, tests fail
+- Separation enables independent testing of logic and display
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 CRITICAL FILE COORDINATION RULES:
 1. If this is main.py: Include ONLY the classes and functions needed for this specific project
    - Define ALL application-specific classes here
    - This is the single source of truth for the project's classes
    - Implement proper validation and error handling as needed by the requirements
    - Only include what is actually required - do NOT add extra unrelated classes
+   - RESPECT API CONTRACTS: Methods return data, main() handles printing
 
 2. If this is utils.py: ONLY helper functions, NO class definitions
    - Import classes from main.py if needed: "from main import ClassName"

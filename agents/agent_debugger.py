@@ -488,7 +488,7 @@ Previous attempts: {attempt - 1}
                 all_attempts.append(attempt_result)
                 
                 if test_results.get("passed"):
-                    self.logger.info(f"✅ All tests passed after attempt {attempt}!")
+                    self.logger.info(f"SUCCESS: All tests passed after attempt {attempt}!")
                     return {
                         "success": True,
                         "fixed_code": self.fixed_code,
@@ -496,7 +496,7 @@ Previous attempts: {attempt - 1}
                         "final_test_results": test_results
                     }
                 else:
-                    self.logger.warning(f"⚠️  Tests still failing after attempt {attempt}")
+                    self.logger.warning(f"WARNING: Tests still failing after attempt {attempt}")
                     # Update test_results for next iteration
                     self.test_results = test_results
                     # Parse failures for next iteration
