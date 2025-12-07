@@ -3,6 +3,7 @@
 # Core dependencies
 pytest>=7.4.0
 pytest-cov>=4.1.0
+pytest-timeout>=2.2.0
 
 # LangChain for agent memory and chains
 langchain>=0.1.0

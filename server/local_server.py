@@ -236,10 +236,10 @@ class LocalServer:
         start_time = time.time()
         
         try:
-            # Run pytest with timeout plugin to prevent individual test hangs
-            # --timeout=10: Each test must complete within 10 seconds
+            # Run pytest with overall timeout (individual test timeout requires pytest-timeout plugin)
+            # The subprocess timeout parameter handles overall test suite timeout
             result = subprocess.run(
-                ["python", "-m", "pytest", test_file, "-v", "--tb=short", "--timeout=10"],
+                ["python", "-m", "pytest", test_file, "-v", "--tb=short"],
                 cwd=self.current_project_path,
                 capture_output=True,
                 text=True,

@@ -84,7 +84,7 @@ def initialize_agents(enable_memory=False):
             enable_memory=enable_memory,
             session_id=session_id
         )
-        logger.info("✓ Agent A (Architect) initialized")
+        logger.info("Agent A (Architect) initialized")
         
         coder = AgentCoder(
             mcp_client=mcp_client,
@@ -93,7 +93,7 @@ def initialize_agents(enable_memory=False):
             enable_memory=enable_memory,
             session_id=session_id
         )
-        logger.info("✓ Agent B (Coder) initialized")
+        logger.info("Agent B (Coder) initialized")
         
         tester = AgentTester(
             mcp_client=mcp_client,
@@ -102,7 +102,7 @@ def initialize_agents(enable_memory=False):
             enable_memory=enable_memory,
             session_id=session_id
         )
-        logger.info("✓ Agent C (Tester) initialized")
+        logger.info("Agent C (Tester) initialized")
         
         debugger = AgentDebugger(
             mcp_client=mcp_client,
@@ -111,7 +111,7 @@ def initialize_agents(enable_memory=False):
             enable_memory=enable_memory,
             session_id=session_id
         )
-        logger.info("✓ Agent D (Debugger) initialized")
+        logger.info("Agent D (Debugger) initialized")
         
         return architect, coder, tester, debugger, local_server, api_tracker
         
@@ -250,13 +250,7 @@ def main():
     try:
         # Simple user requirements - Architect will expand these into detailed specs
         requirements = """
-I need a contact management system where I can:
-- Save people's names, email addresses, and phone numbers
-- Search for contacts by name
-- See all my contacts in alphabetical order
-- Remove contacts I don't need anymore
-
-Make sure emails and phone numbers are valid before saving them.
+Create a calculator that allows me to do basic math operations
 """
         
         print("\n📋 Requirements:")

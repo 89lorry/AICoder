@@ -131,6 +131,29 @@ Requirements:
 7. Make tests readable and maintainable
 8. Import functions/classes directly and test them - do NOT test main() functions or if __name__ blocks
 
+CRITICAL UI/LOOP TESTING RULES (MUST FOLLOW):
+9. **DO NOT** write tests that call methods containing infinite loops (while True, while running, etc.)
+10. **DO NOT** test UI.run(), main_loop(), event_loop() or similar continuous execution methods
+11. **DO NOT** test interactive CLI methods that block waiting for user input
+12. If the code has UI classes (UserInterface, CLI, Menu, etc.):
+   - Test individual UI methods (display_menu, add_item_ui, etc.) that don't loop
+   - Use monkeypatch to mock input() and print() functions
+   - Mock methods must provide ALL expected inputs INCLUDING exit conditions
+   - DO NOT call the main run() or start() methods that contain loops
+13. Add @pytest.mark.timeout(5) decorator to any test that uses mocked input/print
+14. Tests must be able to complete within 5 seconds
+
+Examples of FORBIDDEN test patterns:
+- ui.run()  # FORBIDDEN - infinite loop
+- app.main_loop()  # FORBIDDEN - blocks forever
+- interface.start()  # FORBIDDEN - continuous execution
+- while True in test body  # FORBIDDEN
+
+Examples of ALLOWED test patterns:
+- ui.add_contact_ui()  # OK - single action method
+- ui.display_menu()  # OK - display only
+- menu.process_choice('1')  # OK - single choice processing
+
 Generate a complete test file named test_main.py that can be executed with pytest.
 Include all necessary imports and setup.
 
@@ -176,6 +199,20 @@ Start your response directly with the first line of Python code (imports).
             
             # Extract test code from response
             test_code = self._extract_code_from_response(response)
+            
+            # Validate test code for problematic patterns
+            validation_warnings = self._validate_test_code(test_code)
+            if validation_warnings:
+                self.logger.warning("Test code validation detected problematic patterns:")
+                for warning in validation_warnings:
+                    self.logger.warning(f"  - {warning}")
+                
+                # Filter out problematic tests automatically
+                self.logger.info("Removing problematic tests from test suite...")
+                original_lines = len(test_code.split('\n'))
+                test_code = self._remove_problematic_tests(test_code, validation_warnings)
+                filtered_lines = len(test_code.split('\n'))
+                self.logger.info(f"Filtered test code: {original_lines} → {filtered_lines} lines ({original_lines - filtered_lines} lines removed)")
             
             # Add test file to existing code package and save
             if not self.local_server.current_project_path:
@@ -359,6 +396,148 @@ Start your response directly with the first line of Python code (imports).
             return response_text.strip()
         
         return result
+    
+    def _remove_problematic_tests(self, test_code: str, warnings: List[str]) -> str:
+        """
+        Remove test functions that contain problematic patterns like .run() calls
+        
+        Args:
+            test_code: The generated test code
+            warnings: List of validation warnings with line numbers
+            
+        Returns:
+            Filtered test code with problematic tests removed
+        """
+        lines = test_code.split('\n')
+        filtered_lines = []
+        current_test_start = None
+        current_test_name = ""
+        skip_current_test = False
+        problematic_line_numbers = set()
+        
+        # Extract line numbers from warnings that indicate problematic patterns
+        import re
+        for warning in warnings:
+            if any(pattern in warning for pattern in ['.run()', '.main_loop()', '.start()', 'while True']):
+                match = re.search(r'Line (\d+):', warning)
+                if match:
+                    problematic_line_numbers.add(int(match.group(1)))
+        
+        # Process lines and filter out problematic tests
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            
+            # Detect start of a test function
+            if stripped.startswith('def test_'):
+                # Save previous test if it was safe
+                if current_test_start is not None and not skip_current_test:
+                    # Add the previous test (already in filtered_lines)
+                    pass
+                
+                # Start tracking new test
+                current_test_start = i
+                current_test_name = stripped.split('(')[0].replace('def ', '')
+                skip_current_test = False
+                
+                # Check if any problematic lines are in this test's range
+                # We'll check this as we go through the test body
+            
+            # Check if current line is problematic
+            if i in problematic_line_numbers:
+                skip_current_test = True
+                self.logger.info(f"  Removing test '{current_test_name}' due to problematic pattern at line {i}")
+            
+            # Add line to filtered output if not skipping
+            if current_test_start is None:
+                # Before first test - keep imports, fixtures, etc.
+                filtered_lines.append(line)
+            elif not skip_current_test:
+                # Inside a safe test - keep the line
+                filtered_lines.append(line)
+            elif stripped.startswith('def test_') or (stripped.startswith('def ') and not stripped.startswith('def test_')):
+                # Hit next function while skipping - start fresh
+                if not stripped.startswith('def test_'):
+                    # Non-test function, keep it
+                    filtered_lines.append(line)
+                    current_test_start = None
+                else:
+                    # New test function while skipping previous
+                    current_test_start = i
+                    current_test_name = stripped.split('(')[0].replace('def ', '')
+                    skip_current_test = i in problematic_line_numbers
+                    if not skip_current_test:
+                        filtered_lines.append(line)
+        
+        return '\n'.join(filtered_lines)
+    
+    def _validate_test_code(self, test_code: str) -> List[str]:
+        """
+        Validate test code for problematic patterns that may cause hanging
+        
+        Args:
+            test_code: The generated test code to validate
+            
+        Returns:
+            List of warning messages for any issues found
+        """
+        warnings = []
+        lines = test_code.split('\n')
+        
+        # Patterns that indicate problematic tests
+        problematic_patterns = [
+            (r'\.run\(\)', "Test calls .run() method which may contain infinite loop"),
+            (r'\.main_loop\(\)', "Test calls .main_loop() method which likely blocks forever"),
+            (r'\.start\(\)', "Test calls .start() method which may run continuously"),
+            (r'\.event_loop\(\)', "Test calls .event_loop() method which may block"),
+            (r'while\s+True:', "Test contains 'while True' loop which may hang"),
+            (r'while\s+running:', "Test contains 'while running' loop which may hang"),
+        ]
+        
+        # Check for problematic patterns
+        for i, line in enumerate(lines, 1):
+            # Skip comments
+            if line.strip().startswith('#'):
+                continue
+            
+            for pattern, message in problematic_patterns:
+                import re
+                if re.search(pattern, line):
+                    warnings.append(f"Line {i}: {message} - '{line.strip()}'")
+        
+        # Check for UI test methods without timeout decorator
+        in_test_function = False
+        test_has_timeout = False
+        test_name = ""
+        test_uses_mock_input = False
+        
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            
+            # Detect test function start
+            if stripped.startswith('def test_'):
+                # Check if previous test needed timeout but didn't have it
+                if in_test_function and test_uses_mock_input and not test_has_timeout:
+                    warnings.append(f"Test '{test_name}' uses mock input but lacks @pytest.mark.timeout decorator")
+                
+                # Reset for new test
+                in_test_function = True
+                test_has_timeout = False
+                test_uses_mock_input = False
+                test_name = stripped.split('(')[0].replace('def ', '')
+            
+            # Check for timeout decorator
+            if '@pytest.mark.timeout' in stripped:
+                test_has_timeout = True
+            
+            # Check for mock input usage
+            if 'mock_input' in stripped or 'monkeypatch' in stripped:
+                test_uses_mock_input = True
+        
+        # Check last test
+        if in_test_function and test_uses_mock_input and not test_has_timeout:
+            warnings.append(f"Test '{test_name}' uses mock input but lacks @pytest.mark.timeout decorator")
+        
+        return warnings
     
     def _extract_failures(self, test_output: str) -> List[Dict[str, str]]:
         """Extract failure information from pytest output"""

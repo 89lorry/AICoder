@@ -11,11 +11,10 @@ import time
 class WorkflowOrchestrator:
     """Orchestrates the agent workflow with feedback loop"""
     
-    # Gemini 2.5 Flash Free Tier Rate Limits
-    # 15 requests per minute (RPM) = 4 seconds between requests minimum
-    # 1 million tokens per minute (TPM)
-    # 1,500 requests per day (RPD)
-    REQUEST_DELAY = 5.0  # 5 seconds between requests (safer than 4 seconds)
+    # Gemini API Free Tier Rate Limits
+    # 10 requests per minute (RPM) = 6 seconds between requests minimum
+    # Conservative delay to avoid 429 errors and accommodate retry logic
+    REQUEST_DELAY = 6.0  # 6 seconds between requests (10 RPM limit)
     
     def __init__(self, architect, coder, tester, debugger, max_iterations=5, enable_rate_limiting=True):
         """
@@ -49,7 +48,7 @@ class WorkflowOrchestrator:
         time_since_last_request = time.time() - self.last_request_time
         if time_since_last_request < self.REQUEST_DELAY:
             wait_time = self.REQUEST_DELAY - time_since_last_request
-            self.logger.info(f"⏱️  Rate limit: waiting {wait_time:.1f}s before next API call...")
+            self.logger.info(f"Rate limit: waiting {wait_time:.1f}s before next API call...")
             time.sleep(wait_time)
         
         self.last_request_time = time.time()
