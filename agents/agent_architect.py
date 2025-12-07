@@ -1,6 +1,6 @@
 """
 Agent A: Architect
-Breaks requirements into file structure (main.py, utils.py, test_data.py)
+Combines all architectural tasks into ONE API request
 """
 
 import logging
@@ -11,10 +11,11 @@ from utils.memory_manager import MemoryManager
 from utils.langchain_wrapper import LangChainWrapper
 from utils.conversation_logger import ConversationLogger
 from datetime import datetime
+import json
 
 
 class AgentArchitect:
-    """Agent responsible for architectural design and file structure planning"""
+    """Agent responsible for architectural design - ONE API CALL per iteration"""
     
     def __init__(self, mcp_client, api_usage_tracker=None, enable_memory=True, session_id=None):
         """
@@ -47,7 +48,6 @@ class AgentArchitect:
                 memory_manager=self.memory_manager,
                 llm_provider="openai"
             )
-            # Add system message to memory
             self.memory_manager.add_system_message(
                 "You are an expert software architect. You analyze requirements and design "
                 "comprehensive software architectures with proper file structures."
@@ -56,206 +56,159 @@ class AgentArchitect:
         
         # Internal state
         self.requirements = None
-        self.file_structure = {}
         self.architectural_plan = None
     
-    def analyze_requirements(self, requirements: str) -> Dict[str, Any]:
+    def create_complete_architecture(self, requirements: str) -> Dict[str, Any]:
         """
-        Analyze software requirements and design architecture
+        SINGLE API CALL - Analyze requirements, design structure, create detailed plan
         
         Args:
             requirements: Natural language description of software requirements
             
         Returns:
-            Dictionary containing analyzed requirements and initial architecture
+            Complete architectural plan dictionary
         """
         self.requirements = requirements
-        self.logger.info("Analyzing requirements...")
+        self.logger.info("Creating complete architecture in ONE API call...")
         
-        prompt = f"""Analyze the following software requirements and create a high-level architectural design:
+        prompt = f"""
+╔══════════════════════════════════════════════════════════════════════════╗
+║          🚨 CRITICAL ARCHITECTURE RULES - READ FIRST 🚨                 ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+⚠️ SELF-VALIDATION CHECKLIST - Before creating the plan:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+☐ Have I specified that data methods must RETURN values?
+☐ Have I specified that query/search methods must RETURN results?
+☐ Have I specified that main() handles printing?
+☐ Have I limited components to EXACTLY 3?
+☐ Have I specified ALL classes go in main.py?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 THE ONE RULE THAT MATTERS:
+   In your detailed_plan, specify: "Data methods RETURN, main() prints"
+
+Create a COMPLETE architectural plan for the following requirements in a SINGLE response:
 
 Requirements:
 {requirements}
 
-Provide a JSON response with:
-1. "components": List of main components/modules needed
-2. "dependencies": List of external dependencies (libraries, frameworks)
-3. "architecture_type": Type of architecture (CLI, API, GUI, etc.)
-4. "complexity": Estimated complexity level (simple, medium, complex)
-5. "summary": Brief summary of what the software should do
+Provide a comprehensive JSON response with ALL of the following sections:
+
+1. "analysis": {{
+    "components": [EXACTLY 3 main components/modules - NO MORE],
+    "dependencies": [external libraries needed],
+    "architecture_type": "CLI/API/GUI/etc",
+    "complexity": "simple/medium/complex",
+    "summary": "brief project summary"
+}}
+
+2. "file_structure": {{
+    "files": {{
+        "main.py": "Contains ALL core classes and application logic",
+        "utils.py": "ONLY helper functions (imports from main.py)",
+        "test_data.py": "ONLY sample data (imports from main.py)",
+        "README.md": "Project documentation"
+    }},
+    "entry_point": "main.py",
+    "class_definitions": {{
+        "ClassName": "main.py"  // ALL classes defined in main.py
+    }}
+}}
+
+CRITICAL RULES:
+- EXACTLY 3 components in analysis
+- ALL classes defined in main.py ONLY
+- utils.py and test_data.py import from main.py
+- NO duplicate class definitions
+- Return ONLY valid JSON, no markdown
+
+Response MUST be parseable JSON starting with {{ and ending with }}.
 """
+# Optional detailed plan, better code but increasing text content count that might dilute critical rules
+# 3. "detailed_plan": {{
+#     "overview": "overall architecture description",
+#     "file_plans": {{
+#         "main.py": {{
+#             "purpose": "what it does",
+#             "classes": ["Class1", "Class2"],
+#             "functions": ["func1", "func2"],
+#             "key_logic": "main logic flow",
+#             "api_contracts": {{
+#                 "ClassName.data_method": "RETURNS data/list/dict (does NOT print)",
+#                 "ClassName.query_method": "RETURNS results (does NOT print)",
+#                 "ClassName.action_method": "Can print confirmation, RETURNS success status"
+#             }},
+#             "design_principles": [
+#                 "Data retrieval methods RETURN values",
+#                 "Query/search methods RETURN results",
+#                 "Action methods can print status, but RETURN success indicators",
+#                 "main() or display functions handle printing",
+#                 "Separation: data layer returns, presentation layer prints"
+#             ]
+#         }},
+#         "utils.py": {{
+#             "purpose": "what it does",
+#             "functions": ["helper1", "helper2"],
+#             "imports": ["from main import ClassName"]
+#         }},
+#         "test_data.py": {{
+#             "purpose": "sample data",
+#             "imports": ["from main import ClassName"],
+#             "data_examples": ["sample1", "sample2"]
+#         }}
+#     }},
+#     "implementation_order": ["main.py", "utils.py", "test_data.py"],
+#     "test_considerations": ["what to test"],
+#     "notes": ["important notes"]
+# }}
+
         
         try:
-            # Use LangChain wrapper if available, otherwise use MCP client directly
+            # Use MCP client to get complete architecture
             if self.langchain_wrapper:
                 response = self.langchain_wrapper.invoke(prompt)
-                # Track API usage
                 if self.api_usage_tracker:
                     token_usage = self.langchain_wrapper.get_token_usage()
                     if token_usage:
                         self.api_usage_tracker.track_usage("architect", token_usage)
             else:
-                # Fallback to direct MCP client
                 if not hasattr(self.mcp_client, 'session') or self.mcp_client.session is None:
                     self.mcp_client.connect()
                 response = self.mcp_client.send_request(prompt)
-                # Track API usage
                 if self.api_usage_tracker:
                     token_usage = self.mcp_client.get_token_usage()
                     if token_usage:
                         self.api_usage_tracker.track_usage("architect", token_usage)
                 
-                # Extract text from response
                 response_text = self.mcp_client.extract_text_from_response(response)
-                
-                # Log conversation
                 self.conversation_logger.log_interaction(
                     prompt=prompt,
                     response=response_text,
                     metadata=self.mcp_client.get_token_usage()
                 )
             
-            # Parse response
-            analysis = self._parse_analysis(response_text)
-            self.logger.info(f"Requirements analyzed. Components: {len(analysis.get('components', []))}")
-            
-            return analysis
-            
-        except Exception as e:
-            self.logger.error(f"Error analyzing requirements: {str(e)}")
-            raise
-    
-    def design_file_structure(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Design file structure for the target software
-        
-        Args:
-            analysis: Analyzed requirements from analyze_requirements()
-            
-        Returns:
-            Dictionary containing file structure design
-        """
-        self.logger.info("Designing file structure...")
-        
-        prompt = f"""Based on the following architectural analysis, design a file structure for the software:
-
-Architecture Analysis:
-{analysis}
-
-Design a file structure that includes at minimum:
-- main.py: Main entry point and application logic
-- utils.py: Utility functions and helpers
-- test_data.py: Test data and sample inputs
-
-Provide a JSON response with:
-1. "files": Dictionary mapping filename to brief description of contents
-2. "file_structure": Hierarchical structure if directories are needed
-3. "imports": Dictionary showing what imports each file will need
-4. "entry_point": Which file is the entry point (typically main.py)
-
-Be specific about what functions, classes, and logic should go in each file.
-"""
-        
-        try:
-            # Use LangChain wrapper if available
-            if self.langchain_wrapper:
-                response = self.langchain_wrapper.invoke(prompt, context={"analysis": analysis})
-                # Track API usage
-                if self.api_usage_tracker:
-                    token_usage = self.langchain_wrapper.get_token_usage()
-                    if token_usage:
-                        self.api_usage_tracker.track_usage("architect", token_usage)
-            else:
-                # Fallback to direct MCP client
-                response = self.mcp_client.send_request(prompt)
-                # Track API usage
-                if self.api_usage_tracker:
-                    token_usage = self.mcp_client.get_token_usage()
-                    if token_usage:
-                        self.api_usage_tracker.track_usage("architect", token_usage)
-            
-            # Parse file structure
-            file_structure = self._parse_file_structure(response)
-            self.file_structure = file_structure
-            self.logger.info(f"File structure designed. Files: {list(file_structure.get('files', {}).keys())}")
-            
-            return file_structure
-            
-        except Exception as e:
-            self.logger.error(f"Error designing file structure: {str(e)}")
-            raise
-    
-    def create_architectural_plan(self, analysis: Dict[str, Any], 
-                                   file_structure: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Create detailed architectural plan combining analysis and file structure
-        
-        Args:
-            analysis: Analyzed requirements
-            file_structure: Designed file structure
-            
-        Returns:
-            Complete architectural plan dictionary
-        """
-        self.logger.info("Creating architectural plan...")
-        
-        prompt = f"""Create a detailed architectural plan combining the analysis and file structure:
-
-Requirements Analysis:
-{analysis}
-
-File Structure:
-{file_structure}
-
-Create a comprehensive architectural plan as JSON with:
-1. "overview": Overall architecture description
-2. "file_plans": Detailed plan for each file including:
-   - "purpose": What the file does
-   - "functions": List of functions with descriptions
-   - "classes": List of classes with descriptions
-   - "key_logic": Main logic flow
-3. "implementation_order": Suggested order for implementing files
-4. "test_considerations": What should be tested
-5. "notes": Any important implementation notes
-"""
-        
-        try:
-            # Use LangChain wrapper if available
-            if self.langchain_wrapper:
-                response = self.langchain_wrapper.invoke(
-                    prompt, 
-                    context={"analysis": analysis, "file_structure": file_structure}
-                )
-                # Track API usage
-                if self.api_usage_tracker:
-                    token_usage = self.langchain_wrapper.get_token_usage()
-                    if token_usage:
-                        self.api_usage_tracker.track_usage("architect", token_usage)
-            else:
-                # Fallback to direct MCP client
-                response = self.mcp_client.send_request(prompt)
-                # Track API usage
-                if self.api_usage_tracker:
-                    token_usage = self.mcp_client.get_token_usage()
-                    if token_usage:
-                        self.api_usage_tracker.track_usage("architect", token_usage)
-            
-            # Build comprehensive plan
-            plan = {
-                "requirements": self.requirements,
-                "analysis": analysis,
-                "file_structure": file_structure,
-                "detailed_plan": self._parse_detailed_plan(response),
-                "timestamp": self._get_timestamp()
-            }
+            # Parse complete response
+            plan = self._parse_complete_architecture(response_text)
+            plan["requirements"] = requirements
+            plan["timestamp"] = datetime.now().isoformat()
             
             self.architectural_plan = plan
-            self.logger.info("Architectural plan created successfully")
+            self.logger.info("Complete architecture created in ONE API call")
+            self.logger.info(f"Components: {len(plan.get('analysis', {}).get('components', []))}")
+            self.logger.info(f"Files: {list(plan.get('file_structure', {}).get('files', {}).keys())}")
+            
+            # DEBUG: Verify detailed_plan was parsed
+            detailed_plan = plan.get('detailed_plan', {})
+            if detailed_plan:
+                self.logger.info(f"✓ detailed_plan parsed with {len(detailed_plan)} keys: {list(detailed_plan.keys())}")
+            else:
+                self.logger.error("❌ detailed_plan is MISSING after parsing!")
             
             return plan
             
         except Exception as e:
-            self.logger.error(f"Error creating architectural plan: {str(e)}")
+            self.logger.error(f"Error creating architecture: {str(e)}")
             raise
     
     def get_architectural_plan(self) -> Optional[Dict[str, Any]]:
@@ -270,96 +223,123 @@ Create a comprehensive architectural plan as JSON with:
             Architectural plan ready for coder agent
         """
         if not self.architectural_plan:
-            raise ValueError("No architectural plan available. Run create_architectural_plan() first.")
+            raise ValueError("No architectural plan available. Run create_complete_architecture() first.")
         
         self.logger.info("Passing architectural plan to Coder agent")
         return self.architectural_plan
     
-    def _parse_analysis(self, response: str) -> Dict[str, Any]:
-        """Parse analysis response from MCP"""
-        import json
+    def _parse_complete_architecture(self, response: Any) -> Dict[str, Any]:
+        """Parse complete architecture response from MCP"""
         try:
-            # Try to extract JSON from response
+            # DEBUG: Log what we're parsing
+            self.logger.info(f"DEBUG: _parse_complete_architecture received type: {type(response)}")
+            
             if isinstance(response, dict):
+                self.logger.info("DEBUG: Response is dict, checking if it has detailed_plan...")
+                if 'detailed_plan' in response:
+                    self.logger.info(f"DEBUG: Dict has detailed_plan with {len(response['detailed_plan'])} keys")
+                else:
+                    self.logger.warning("DEBUG: Dict MISSING detailed_plan!")
                 return response
             
-            # Look for JSON in the response
-            if '{' in response and '}' in response:
-                start = response.find('{')
-                end = response.rfind('}') + 1
-                json_str = response[start:end]
-                return json.loads(json_str)
+            response_text = str(response)
+            self.logger.info(f"DEBUG: Response text length: {len(response_text)}")
+            self.logger.info(f"DEBUG: First 200 chars: {response_text[:200]}")
+            
+            # FIX: Strip markdown code blocks FIRST
+            # Remove ```json or ``` from beginning
+            lines = response_text.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                stripped = line.strip()
+                # Skip markdown code block markers
+                if stripped in ['```json', '```', '```JSON']:
+                    continue
+                cleaned_lines.append(line)
+            
+            response_text = '\n'.join(cleaned_lines)
+            self.logger.info(f"DEBUG: After markdown removal, length: {len(response_text)}")
+            
+            # Extract JSON from response - find FIRST { and LAST }
+            if '{' in response_text and '}' in response_text:
+                start = response_text.find('{')
+                end = response_text.rfind('}') + 1
+                json_str = response_text[start:end]
+                self.logger.info(f"DEBUG: Extracted JSON length: {len(json_str)}")
+                self.logger.info(f"DEBUG: JSON first 100 chars: {json_str[:100]}")
+                
+                parsed = json.loads(json_str)
+                self.logger.info(f"DEBUG: Parsed JSON has keys: {list(parsed.keys())}")
+                
+                # Validate structure
+                if 'analysis' in parsed and 'file_structure' in parsed and 'detailed_plan' in parsed:
+                    detailed_plan = parsed.get('detailed_plan', {})
+                    self.logger.info(f"DEBUG: ✅ Validated! detailed_plan has {len(detailed_plan)} keys: {list(detailed_plan.keys())}")
+                    return parsed
+                else:
+                    self.logger.error(f"DEBUG: ❌ Validation FAILED! Missing required keys. Has: {list(parsed.keys())}")
+                    # Still return parsed if it has at least one of the required keys
+                    if any(key in parsed for key in ['analysis', 'file_structure', 'detailed_plan']):
+                        self.logger.warning("DEBUG: Returning partially valid structure")
+                        return parsed
             
             # Fallback: create structured response
+            self.logger.warning("Could not parse complete JSON, using fallback structure")
             return {
-                "components": ["main", "utils"],
-                "dependencies": [],
-                "architecture_type": "CLI",
-                "complexity": "medium",
-                "summary": response[:200] if len(response) > 200 else response
-            }
-        except json.JSONDecodeError:
-            self.logger.warning("Could not parse JSON from response, using fallback")
-            return {
-                "components": ["main", "utils"],
-                "dependencies": [],
-                "architecture_type": "CLI",
-                "complexity": "medium",
-                "summary": str(response)[:200]
-            }
-    
-    def _parse_file_structure(self, response: str) -> Dict[str, Any]:
-        """Parse file structure response from MCP"""
-        import json
-        try:
-            if isinstance(response, dict):
-                return response
-            
-            if '{' in response and '}' in response:
-                start = response.find('{')
-                end = response.rfind('}') + 1
-                json_str = response[start:end]
-                return json.loads(json_str)
-            
-            # Fallback: default structure
-            return {
-                "files": {
-                    "main.py": "Main entry point and application logic",
-                    "utils.py": "Utility functions and helpers",
-                    "test_data.py": "Test data and sample inputs"
+                "analysis": {
+                    "components": ["Core Application", "Data Management", "User Interface"],
+                    "dependencies": [],
+                    "architecture_type": "CLI",
+                    "complexity": "medium",
+                    "summary": "Multi-component application"
                 },
-                "entry_point": "main.py"
-            }
-        except json.JSONDecodeError:
-            self.logger.warning("Could not parse file structure JSON, using fallback")
-            return {
-                "files": {
-                    "main.py": "Main entry point and application logic",
-                    "utils.py": "Utility functions and helpers",
-                    "test_data.py": "Test data and sample inputs"
+                "file_structure": {
+                    "files": {
+                        "main.py": "Main entry point and core classes",
+                        "utils.py": "Utility functions",
+                        "test_data.py": "Sample data",
+                        "README.md": "Documentation"
+                    },
+                    "entry_point": "main.py"
                 },
-                "entry_point": "main.py"
+                "detailed_plan": {
+                    "overview": "Simple application architecture",
+                    "file_plans": {
+                        "main.py": {
+                            "purpose": "Core application logic",
+                            "classes": [],
+                            "functions": [],
+                            "key_logic": "Main application flow"
+                        }
+                    },
+                    "implementation_order": ["main.py", "utils.py", "test_data.py"],
+                    "notes": []
+                }
             }
-    
-    def _parse_detailed_plan(self, response: str) -> Dict[str, Any]:
-        """Parse detailed plan response from MCP"""
-        import json
-        try:
-            if isinstance(response, dict):
-                return response
-            
-            if '{' in response and '}' in response:
-                start = response.find('{')
-                end = response.rfind('}') + 1
-                json_str = response[start:end]
-                return json.loads(json_str)
-            
-            return {"overview": str(response)[:500]}
-        except json.JSONDecodeError:
-            self.logger.warning("Could not parse detailed plan JSON, using fallback")
-            return {"overview": str(response)[:500]}
-    
-    def _get_timestamp(self) -> str:
-        """Get current timestamp as string"""
-        from datetime import datetime
-        return datetime.now().isoformat()
+        except (json.JSONDecodeError, Exception) as e:
+            self.logger.error(f"Error parsing architecture: {str(e)}")
+            # Return fallback structure
+            return {
+                "analysis": {
+                    "components": ["Core Application", "Data Management", "User Interface"],
+                    "dependencies": [],
+                    "architecture_type": "CLI",
+                    "complexity": "medium",
+                    "summary": "Multi-component application"
+                },
+                "file_structure": {
+                    "files": {
+                        "main.py": "Main entry point and core classes",
+                        "utils.py": "Utility functions",
+                        "test_data.py": "Sample data",
+                        "README.md": "Documentation"
+                    },
+                    "entry_point": "main.py"
+                },
+                "detailed_plan": {
+                    "overview": "Simple application architecture",
+                    "file_plans": {},
+                    "implementation_order": ["main.py"],
+                    "notes": []
+                }
+            }

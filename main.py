@@ -2,13 +2,17 @@
 Main Application Entry Point
 Multi-Agent MCP System for Software Generation
 Using WorkflowOrchestrator with Real MCP Agents
+Supports both CLI and Gradio UI modes
 """
 
 import logging
 import sys
 import os
+import argparse
+from typing import Dict, Any, Tuple
 from config.settings import Settings
 from server.local_server import LocalServer
+from frontend.ui import GradioUI
 
 
 def setup_logging():
@@ -18,7 +22,7 @@ def setup_logging():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler(Settings.LOG_FILE)
+            logging.FileHandler(Settings.LOG_FILE, encoding='utf-8')
         ]
     )
 
@@ -84,7 +88,7 @@ def initialize_agents(enable_memory=False):
             enable_memory=enable_memory,
             session_id=session_id
         )
-        logger.info("✓ Agent A (Architect) initialized")
+        logger.info("Agent A (Architect) initialized")
         
         coder = AgentCoder(
             mcp_client=mcp_client,
@@ -93,7 +97,7 @@ def initialize_agents(enable_memory=False):
             enable_memory=enable_memory,
             session_id=session_id
         )
-        logger.info("✓ Agent B (Coder) initialized")
+        logger.info("Agent B (Coder) initialized")
         
         tester = AgentTester(
             mcp_client=mcp_client,
@@ -102,7 +106,7 @@ def initialize_agents(enable_memory=False):
             enable_memory=enable_memory,
             session_id=session_id
         )
-        logger.info("✓ Agent C (Tester) initialized")
+        logger.info("Agent C (Tester) initialized")
         
         debugger = AgentDebugger(
             mcp_client=mcp_client,
@@ -111,9 +115,9 @@ def initialize_agents(enable_memory=False):
             enable_memory=enable_memory,
             session_id=session_id
         )
-        logger.info("✓ Agent D (Debugger) initialized")
+        logger.info("Agent D (Debugger) initialized")
         
-        return architect, coder, tester, debugger, local_server, api_tracker
+        return architect, coder, tester, debugger, local_server, api_tracker, session_id
         
     except ImportError as e:
         logger.error(f"Failed to import required modules: {e}")
@@ -148,7 +152,7 @@ def run_with_workflow_orchestrator(requirements: str, enable_memory=False, max_i
         logger.error("Failed to initialize agents")
         return None
     
-    architect, coder, tester, debugger, local_server, api_tracker = agents_result
+    architect, coder, tester, debugger, local_server, api_tracker, session_id = agents_result
     
     try:
         # Import WorkflowOrchestrator
@@ -172,7 +176,8 @@ def run_with_workflow_orchestrator(requirements: str, enable_memory=False, max_i
         if api_tracker:
             usage_stats = api_tracker.get_usage_statistics()
             logger.info(f"\nAPI Usage Statistics:")
-            logger.info(f"Total tokens used: {usage_stats.get('total_tokens', 0)}")
+            logger.info(f"Total tokens used: {usage_stats.get('total_tokens', 0):,}")
+            logger.info(f"Total API calls: {usage_stats.get('call_count', 0)}")
         
         return result
         
@@ -237,9 +242,72 @@ if __name__ == "__main__":
     return results['success']
 
 
+
+
+# ============================================================================
+# MAIN FUNCTIONS
+# ============================================================================
+
 def main():
-    """Main application function"""
+    """Main entry point - handles both CLI and UI modes"""
     setup_logging()
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='AICoder - Multi-Agent Code Generation System',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  python main.py              # Run in CLI mode (default)
+  python main.py --ui         # Launch Gradio web UI
+  python main.py --ui --share # Launch Gradio web UI with public sharing
+        '''
+    )
+    parser.add_argument(
+        '--ui',
+        action='store_true',
+        help='Launch Gradio web UI instead of CLI mode'
+    )
+    parser.add_argument(
+        '--share',
+        action='store_true',
+        help='Create a public Gradio share link (only works with --ui)'
+    )
+    
+    args = parser.parse_args()
+    
+    # Check MCP configuration first
+    config_valid, config_msg = check_mcp_configuration()
+    
+    if not config_valid:
+        print(f"⚠️  WARNING: {config_msg}")
+        print("Set MCP_API_KEY environment variable before running")
+        print("\nℹ️  Setup instructions:")
+        print("   1. Copy .env.example to .env")
+        print("   2. Add your API key: MCP_API_KEY=your_key_here")
+        print("   3. Run again")
+        sys.exit(1)
+    
+    # Launch appropriate mode
+    if args.ui:
+        print("=" * 60)
+        print("AICoder - Multi-Agent Code Generator (UI Mode)")
+        print("=" * 60)
+        print(f"✓ {config_msg}")
+        print(f"🌐 Launching Gradio UI on {Settings.UI_HOST}:{Settings.UI_PORT}...")
+        if args.share:
+            print("🔗 Creating public share link...")
+        print("")
+        
+        ui = GradioUI()
+        ui.launch(share=args.share)
+    else:
+        # Run CLI mode
+        main_cli()
+
+
+def main_cli():
+    """Main CLI application function"""
     logger = logging.getLogger(__name__)
     
     print("=" * 60)
@@ -248,19 +316,13 @@ def main():
     print("=" * 60)
     
     try:
-        # Sample requirements
+        # Simple user requirements - Architect will expand these into detailed specs
         requirements = """
-Create a simple calculator program in Python that can:
-1. Add two numbers
-2. Subtract two numbers
-3. Multiply two numbers
-4. Divide two numbers (with zero division handling)
-
-The program should have:
-- A Calculator class with the four basic operations
-- Proper error handling for division by zero
-- A main function that demonstrates all operations
-- Clean, well-documented code
+I need a contact management system where I can:
+- Save people's names, email addresses, and phone numbers
+- Search for contacts by name
+- See all my contacts in alphabetical order
+- Remove contacts I don't need anymore
 """
         
         print("\n📋 Requirements:")
@@ -320,7 +382,10 @@ The program should have:
         print("📊 WORKFLOW RESULTS")
         print("=" * 60)
         print(f"Status: {result['final_status']}")
-        print(f"Iterations: {result['total_iterations']}")
+        
+        # Only show iterations if they exist (not present in error cases)
+        if 'total_iterations' in result:
+            print(f"Iterations: {result['total_iterations']}")
         
         if result['final_status'] == 'success':
             print("\n✅ Code generation and testing completed successfully!")
@@ -330,8 +395,17 @@ The program should have:
                 code_package = result['final_code_package']
                 files = code_package.get('files', {})
                 print(f"\n📁 Generated Files ({len(files)}):")
-                for filename in files.keys():
-                    print(f"   - {filename}")
+                
+                # Handle both dict and list formats
+                if isinstance(files, dict):
+                    for filename in files:  # More Pythonic, no need for .keys()
+                        print(f"   - {filename}")
+                elif isinstance(files, list):
+                    for filename in files:
+                        print(f"   - {filename}")
+                else:
+                    # Handle unexpected format
+                    print(f"   (Unexpected format: {type(files)})")
         else:
             print("\n⚠️  Workflow completed but tests did not pass")
             print(f"Completed {result['total_iterations']} iterations")

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, Dict, Optional
 
 import requests
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 class MCPClient:
     """Client for interacting with MCP services."""
     
-    DEFAULT_TIMEOUT = 30
+    DEFAULT_TIMEOUT = 90  # Increased to 90 seconds to handle complex requests and reduce Read timeout errors
     
     def __init__(
         self,
@@ -77,9 +78,11 @@ class MCPClient:
         temperature: float = 0.2,
         max_tokens: Optional[int] = None,
         extra_params: Optional[Dict[str, Any]] = None,
+        max_retries: int = 5,
+        initial_backoff: float = 2.0,
     ) -> Dict[str, Any]:
         """
-        Send request to MCP service.
+        Send request to MCP service with retry logic for rate limits.
         
         Args:
             prompt: User prompt for the LLM.
@@ -87,6 +90,8 @@ class MCPClient:
             temperature: Sampling temperature.
             max_tokens: Optional completion token limit.
             extra_params: Additional parameters forwarded to the API.
+            max_retries: Maximum number of retry attempts for 429 errors.
+            initial_backoff: Initial backoff delay in seconds (doubles each retry).
         """
         if not prompt or not prompt.strip():
             raise ValueError("Prompt cannot be empty.")
@@ -97,8 +102,8 @@ class MCPClient:
         # Check if using Google Gemini API
         is_gemini = "generativelanguage.googleapis.com" in self.endpoint
         
+        # Prepare payload once
         if is_gemini:
-            # Use Gemini format
             endpoint_with_key = f"{self.endpoint}?key={self.api_key}"
             payload = self._build_gemini_payload(
                 prompt=prompt,
@@ -106,18 +111,9 @@ class MCPClient:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            self.last_request = payload
-            
-            # Remove Authorization header for Gemini (uses query param instead)
             headers = {"Content-Type": "application/json"}
-            response = requests.post(
-                endpoint_with_key,
-                data=json.dumps(payload),
-                headers=headers,
-                timeout=self.timeout,
-            )
         else:
-            # Use OpenAI-style format
+            endpoint_with_key = self.endpoint
             payload = self._build_payload(
                 prompt=prompt,
                 context=context,
@@ -125,33 +121,110 @@ class MCPClient:
                 max_tokens=max_tokens,
                 extra_params=extra_params,
             )
-            self.last_request = payload
+            headers = None
+        
+        self.last_request = payload
+        
+        # Retry loop with exponential backoff
+        backoff_delay = initial_backoff
+        last_exception = None
+        
+        for attempt in range(max_retries + 1):
+            try:
+                # Make the request
+                if is_gemini:
+                    response = requests.post(
+                        endpoint_with_key,
+                        data=json.dumps(payload),
+                        headers=headers,
+                        timeout=self.timeout,
+                    )
+                else:
+                    response = self.session.post(
+                        endpoint_with_key,
+                        data=json.dumps(payload),
+                        timeout=self.timeout,
+                    )
+                
+                # Check for rate limit error (429)
+                if response.status_code == 429:
+                    if attempt < max_retries:
+                        logger.warning(
+                            f"Rate limit (429) encountered. Retrying in {backoff_delay:.1f}s "
+                            f"(attempt {attempt + 1}/{max_retries})..."
+                        )
+                        time.sleep(backoff_delay)
+                        backoff_delay *= 2  # Exponential backoff
+                        continue
+                    else:
+                        # Final attempt failed
+                        logger.error(f"Rate limit (429) persisted after {max_retries} retries.")
+                        response.raise_for_status()
+                
+                # Check for other errors
+                response.raise_for_status()
+                
+                # Success - parse response
+                data = response.json()
+                self.last_response = data
+                
+                # Extract token usage based on provider
+                if is_gemini:
+                    usage_meta = data.get("usageMetadata", {})
+                    self.last_token_usage = {
+                        "prompt_tokens": usage_meta.get("promptTokenCount", 0),
+                        "completion_tokens": usage_meta.get("candidatesTokenCount", 0),
+                        "total_tokens": usage_meta.get("totalTokenCount", 0),
+                    }
+                else:
+                    self.last_token_usage = data.get("usage")
+                
+                if attempt > 0:
+                    logger.info(f"Request succeeded after {attempt + 1} attempts.")
+                else:
+                    logger.debug("MCP request completed successfully.")
+                
+                return data
+                
+            except requests.exceptions.HTTPError as e:
+                last_exception = e
+                if e.response.status_code == 429 and attempt < max_retries:
+                    # Already handled above, but catch here for safety
+                    logger.warning(
+                        f"Rate limit (429) caught in exception handler. Retrying in {backoff_delay:.1f}s "
+                        f"(attempt {attempt + 1}/{max_retries})..."
+                    )
+                    time.sleep(backoff_delay)
+                    backoff_delay *= 2
+                    continue
+                else:
+                    # Re-raise if not 429 or out of retries
+                    raise
             
-            response = self.session.post(
-                self.endpoint,
-                data=json.dumps(payload),
-                timeout=self.timeout,
-            )
+            except requests.exceptions.Timeout as e:
+                # Timeout errors - retry with backoff
+                last_exception = e
+                if attempt < max_retries:
+                    logger.warning(
+                        f"Request timed out after {self.timeout}s. Retrying in {backoff_delay:.1f}s "
+                        f"(attempt {attempt + 1}/{max_retries})..."
+                    )
+                    time.sleep(backoff_delay)
+                    backoff_delay *= 2
+                    continue
+                else:
+                    logger.error(f"Request timed out after {max_retries} retry attempts.")
+                    raise
+            
+            except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
+                # Non-retryable errors
+                logger.error(f"Request failed with non-retryable error: {e}")
+                raise
         
-        response.raise_for_status()
-        
-        data = response.json()
-        self.last_response = data
-        
-        # Extract token usage based on provider
-        if is_gemini:
-            # Gemini uses usageMetadata
-            usage_meta = data.get("usageMetadata", {})
-            self.last_token_usage = {
-                "prompt_tokens": usage_meta.get("promptTokenCount", 0),
-                "completion_tokens": usage_meta.get("candidatesTokenCount", 0),
-                "total_tokens": usage_meta.get("totalTokenCount", 0),
-            }
-        else:
-            self.last_token_usage = data.get("usage")
-        
-        logger.debug("MCP request completed successfully.")
-        return data
+        # Should not reach here, but raise last exception if we do
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("Request failed after all retry attempts.")
     
     def receive_response(self) -> Optional[Dict[str, Any]]:
         """Return the last response object."""

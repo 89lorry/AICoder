@@ -3,64 +3,23 @@ User Interface Module
 Handles user input for coding prompts and displays results
 """
 
-from __future__ import annotations
-
-from typing import Dict, Tuple, List
-
-import gradio as gr
-import os
+import logging
 import sys
-from dotenv import load_dotenv
+import os
+from typing import Dict, Tuple
 
+# Add parent directory to path for imports
 _CURRENT_DIR = os.path.dirname(__file__)
 _PROJECT_ROOT = os.path.abspath(os.path.join(_CURRENT_DIR, os.pardir))
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
-# Load environment from .env so real API keys can be used when available
-load_dotenv()
-
-def _install_backend_compat_shims() -> None:
-    """
-    Install minimal runtime shims so backend imports succeed even if optional
-    memory/langchain modules are not present. No new files or memory logic added.
-    """
-    import types as _types
-    if "utils.memory_manager" not in sys.modules:
-        mm = _types.ModuleType("utils.memory_manager")
-        class MemoryManager:
-            def __init__(self, *args, **kwargs): ...
-            def save_context(self, *args, **kwargs): ...
-            def load_memory_variables(self, *args, **kwargs): return {"chat_history": []}
-            def get_chat_history(self): return ""
-            def add_system_message(self, *args, **kwargs): ...
-            def clear(self): ...
-        mm.MemoryManager = MemoryManager
-        sys.modules["utils.memory_manager"] = mm
-    if "utils.langchain_wrapper" not in sys.modules:
-        lw = _types.ModuleType("utils.langchain_wrapper")
-        class LangChainWrapper:
-            def __init__(self, *args, **kwargs): ...
-            def invoke(self, *args, **kwargs): return ""
-            def get_token_usage(self): return {}
-        lw.LangChainWrapper = LangChainWrapper
-        sys.modules["utils.langchain_wrapper"] = lw
-
-_install_backend_compat_shims()
-
-from backend.mcp_handler import MCPHandler
 from config.settings import Settings
 
 
-DEFAULT_DESCRIPTION = (
-    "The Data Integrity Analyzer is a software application that analyzes and evaluates the integrity of data sets, helping users identify and address data quality issues. It performs checks on data consistency, accuracy, completeness, and validity, providing users with a comprehensive assessment of the overall data integrity."
-)
-
-
 def _partition_files(files: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str, str]]:
-    """Split files into application vs tests based on path prefix."""
-    app_files: Dict[str, str] = {}
-    test_files: Dict[str, str] = {}
+    """Partition files into application and test files"""
+    app_files, test_files = {}, {}
     for path, content in files.items():
         if path.startswith("tests/") or path.lower().endswith("_test.py") or path.lower().startswith("test_"):
             test_files[path] = content
@@ -69,102 +28,287 @@ def _partition_files(files: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str, s
     return app_files, test_files
 
 
-def _files_to_markdown(files: Dict[str, str]) -> str:
-    """Render a mapping of filename -> content into a Markdown string with code fences."""
-    if not files:
-        return "_No files generated._"
-    sections: List[str] = []
-    for filename in sorted(files.keys()):
-        content = files[filename]
-        lang = "python" if filename.endswith(".py") else "text"
-        sections.append(f"### `{filename}`\n\n```{lang}\n{content}\n```")
-    return "\n\n".join(sections)
-
-
-class UI:
-    """Gradio-based single-page UI to drive the code-generation workflow."""
-
+class GradioUI:
+    """Gradio-based UI for code generation workflow"""
+    
     def __init__(self):
-        # Always use the real backend client; requires MCP_API_KEY to be set
-        self.handler = MCPHandler()
-        self._last_result: Dict[str, str] | None = None
-
-    # Compatibility methods for main.py (not used in Gradio flow)
-    def get_user_input(self):
-        return None
-
-    def display_results(self):
-        return None
-
-    def display_api_usage(self):
-        return None
-
-    def _on_generate(self, description: str, requirements: str) -> Tuple[str, str, str]:
-        """Backend callback for the Generate button."""
-        request = {"description": description.strip(), "requirements": requirements}
-        result = self.handler.process_request(request)
-        files = result.get("files", {})
-        app_files, test_files = _partition_files(files)
-        app_md = _files_to_markdown(app_files)
-        test_md = _files_to_markdown(test_files)
-
-        stats = getattr(self.handler, "usage_tracker", None)
-        stats = stats.get_usage_statistics() if stats else {"call_count": 0, "total_tokens": 0}
-        usage_md = (
-            f"**API Calls**: {stats.get('call_count', 0)}  |  "
-            f"**Total Tokens**: {stats.get('total_tokens', 0)}"
+        # Initialize backend handler lazily
+        self.backend_initialized = False
+        self.orchestrator = None
+        self.api_tracker = None
+    
+    def _initialize_backend(self):
+        """Initialize backend components once"""
+        if self.backend_initialized:
+            return True
+        
+        try:
+            from main import initialize_agents
+            agents_result = initialize_agents(enable_memory=Settings.ENABLE_MEMORY)
+            if agents_result is None:
+                return False
+            
+            architect, coder, tester, debugger, local_server, api_tracker, session_id = agents_result
+            
+            from workflow_orchestrator import WorkflowOrchestrator
+            self.orchestrator = WorkflowOrchestrator(
+                architect=architect,
+                coder=coder,
+                tester=tester,
+                debugger=debugger,
+                max_iterations=5
+            )
+            self.api_tracker = api_tracker
+            
+            self.backend_initialized = True
+            return True
+        except Exception as e:
+            logging.error(f"Failed to initialize backend: {e}")
+            return False
+    
+    def _on_generate(self, description: str, requirements: str, progress=None):
+        """Generate code & tests via backend multi-agent pipeline"""
+        try:
+            import gradio as gr
+            
+            # Initialize backend if needed
+            if not self._initialize_backend():
+                return (
+                    {},
+                    {},
+                    gr.update(choices=[], value=None),
+                    gr.update(choices=[], value=None),
+                    "❌ Failed to initialize backend. Check MCP_API_KEY.",
+                    "**API Calls**: 0  |  **Total Tokens**: 0",
+                    0,
+                )
+            
+            # Combine description and requirements
+            full_requirements = f"{description.strip()}\n\n{requirements.strip()}"
+            
+            # Update progress if available
+            if progress is not None:
+                progress(0, desc="🏗️ Architect: Designing system architecture...")
+            
+            # Run workflow
+            result = self.orchestrator.run_complete_workflow(full_requirements)
+            
+            if result and result.get('final_status') == 'success':
+                # Extract generated files
+                code_package = result.get('code_package', {})
+                files = code_package.get('code', {})
+                
+                app_files, test_files = _partition_files(files)
+                
+                # Build radio choices
+                app_choices = sorted(app_files.keys())
+                test_choices = sorted(test_files.keys())
+                
+                # Select default file
+                if app_choices:
+                    default_file = app_choices[0]
+                    unified_default = app_files[default_file]
+                    app_update = gr.update(choices=app_choices, value=default_file)
+                    test_update = gr.update(choices=test_choices, value=None)
+                elif test_choices:
+                    default_file = test_choices[0]
+                    unified_default = test_files[default_file]
+                    app_update = gr.update(choices=app_choices, value=None)
+                    test_update = gr.update(choices=test_choices, value=default_file)
+                else:
+                    unified_default = ""
+                    app_update = gr.update(choices=[], value=None)
+                    test_update = gr.update(choices=[], value=None)
+                
+                # Usage stats - tracker now resets each session
+                if self.api_tracker:
+                    stats = self.api_tracker.get_usage_statistics()
+                    total_tokens = stats.get('total_tokens', 0)
+                    total_calls = stats.get('call_count', 0)
+                    
+                    usage_md = f"**API Calls**: {total_calls}  |  **Total Tokens**: {total_tokens:,}"
+                    token_progress = total_tokens
+                else:
+                    usage_md = "**API Calls**: 0  |  **Total Tokens**: 0"
+                    token_progress = 0
+                
+                return (
+                    app_files,
+                    test_files,
+                    app_update,
+                    test_update,
+                    unified_default,
+                    usage_md,
+                    token_progress,
+                )
+            else:
+                # Workflow failed
+                error_msg = result.get('error', 'Workflow failed') if result else 'Workflow failed'
+                return (
+                    {},
+                    {},
+                    gr.update(choices=[], value=None),
+                    gr.update(choices=[], value=None),
+                    f"❌ Error: {error_msg}",
+                    "**API Calls**: 0  |  **Total Tokens**: 0",
+                    0,
+                )
+        except Exception as e:
+            import gradio as gr
+            logging.error(f"Error in _on_generate: {e}")
+            return (
+                {},
+                {},
+                gr.update(choices=[], value=None),
+                gr.update(choices=[], value=None),
+                f"❌ Exception: {str(e)}",
+                "**API Calls**: 0  |  **Total Tokens**: 0",
+                0,
+            )
+    
+    def _on_clear(self):
+        """Reset all fields and outputs"""
+        import gradio as gr
+        return (
+            "",  # description
+            "",  # requirements
+            {},  # app_files_state
+            {},  # test_files_state
+            gr.update(choices=[], value=None),  # app_file_list
+            gr.update(choices=[], value=None),  # test_file_list
+            "",  # code_view content
+            "**API Calls**: 0  |  **Total Tokens**: 0",  # usage_panel
+            0,  # token_progress
         )
-        self._last_result = result
-        return app_md, test_md, usage_md
-
-    def _on_clear(self) -> Tuple[str, str, str, str, str]:
-        """Reset all fields and outputs."""
-        return DEFAULT_DESCRIPTION, "", "", "", "**API Calls**: 0  |  **Total Tokens**: 0"
-
-    def launch(self, share: bool = False) -> None:
-        """Create and launch the Gradio interface."""
-        with gr.Blocks(title="SWE270P - Multi-Agent Code Generator") as demo:
-            gr.Markdown("## SWE270P Final Project — Multi-Agent Code & Test Generator")
+    
+    def _on_app_file_change(self, selected: str, app_files: Dict[str, str]):
+        """Handle application file selection"""
+        if selected:
+            return app_files.get(selected, "")
+        return ""
+    
+    def _on_test_file_change(self, selected: str, test_files: Dict[str, str]):
+        """Handle test file selection"""
+        if selected:
+            return test_files.get(selected, "")
+        return ""
+    
+    def launch(self, share: bool = False):
+        """Launch Gradio UI"""
+        try:
+            import gradio as gr
+        except ImportError:
+            print("❌ Gradio not installed. Install with: pip install gradio")
+            return
+        
+        with gr.Blocks(title="AICoder - Multi-Agent Code Generator") as demo:
+            gr.Markdown("## AICoder — Multi-Agent Code & Test Generator")
+            
+            app_files_state = gr.State({})
+            test_files_state = gr.State({})
+            
             with gr.Row():
+                # LEFT SIDE
                 with gr.Column(scale=1):
                     description = gr.Textbox(
                         label="Software Description",
-                        value=DEFAULT_DESCRIPTION,
+                        value="",
                         lines=6,
-                        placeholder="Describe the software to generate...",
+                        placeholder="Describe what software you want to build..."
                     )
                     requirements = gr.Textbox(
-                        label="Requirements (free-form, one per line or paragraph)",
+                        label="Requirements (optional)",
                         value="",
                         lines=8,
-                        placeholder="e.g.,\n- Validate nulls and types\n- Report duplicates\n- Provide auto-fix suggestions",
+                        placeholder="- Feature 1\n- Feature 2\n- Feature 3",
                     )
+                    
                     with gr.Row():
                         generate_btn = gr.Button("Generate Code & Tests", variant="primary")
                         clear_btn = gr.Button("Clear", variant="secondary")
+                    
                     usage_panel = gr.Markdown(
                         "**API Calls**: 0  |  **Total Tokens**: 0",
                         elem_id="usage-panel",
                     )
-                with gr.Column(scale=1):
-                    gr.Markdown("### Application Code")
-                    app_code = gr.Markdown(value="_Awaiting generation..._", elem_id="app-code",)
-                    gr.Markdown("### Test Code")
-                    test_code = gr.Markdown(value="_Awaiting generation..._", elem_id="test-code",)
-
-            # Wire interactions
+                    
+                    token_progress = gr.Slider(
+                        minimum=0,
+                        maximum=20000,
+                        value=0,
+                        step=1,
+                        interactive=False,
+                        label="Token Usage Progress",
+                    )
+                
+                # RIGHT SIDE
+                with gr.Column(scale=3):
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            app_file_list = gr.Radio(
+                                label="Application Files",
+                                choices=[],
+                                value=None,
+                                interactive=True,
+                            )
+                            test_file_list = gr.Radio(
+                                label="Test Files",
+                                choices=[],
+                                value=None,
+                                interactive=True,
+                            )
+                        
+                        with gr.Column(scale=4):
+                            code_view = gr.Code(
+                                label="File Content",
+                                value="",
+                                language="python",
+                                lines=40,
+                            )
+            
+            # Callbacks
             generate_btn.click(
                 fn=self._on_generate,
                 inputs=[description, requirements],
-                outputs=[app_code, test_code, usage_panel],
-                api_name="generate",
+                outputs=[
+                    app_files_state,
+                    test_files_state,
+                    app_file_list,
+                    test_file_list,
+                    code_view,
+                    usage_panel,
+                    token_progress,
+                ],
             )
+            
             clear_btn.click(
                 fn=self._on_clear,
                 inputs=[],
-                outputs=[description, requirements, app_code, test_code, usage_panel],
+                outputs=[
+                    description,
+                    requirements,
+                    app_files_state,
+                    test_files_state,
+                    app_file_list,
+                    test_file_list,
+                    code_view,
+                    usage_panel,
+                    token_progress,
+                ],
             )
-
+            
+            app_file_list.change(
+                fn=self._on_app_file_change,
+                inputs=[app_file_list, app_files_state],
+                outputs=[code_view],
+            )
+            
+            test_file_list.change(
+                fn=self._on_test_file_change,
+                inputs=[test_file_list, test_files_state],
+                outputs=[code_view],
+            )
+        
         demo.launch(
             share=share,
             server_name=Settings.UI_HOST,
@@ -173,4 +317,6 @@ class UI:
 
 
 if __name__ == "__main__":
-    UI().launch()
+    # For testing UI standalone
+    ui = GradioUI()
+    ui.launch()
