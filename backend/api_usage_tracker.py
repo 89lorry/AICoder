@@ -29,8 +29,9 @@ class APIUsageTracker:
         self.usage_log: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
         
-        if self.enabled:
-            self._load_existing_usage()
+        # Start fresh each session - don't load previous usage
+        # if self.enabled:
+        #     self._load_existing_usage()
     
     def _load_existing_usage(self) -> None:
         """Load previous usage stats if a log file already exists."""

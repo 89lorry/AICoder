@@ -2,13 +2,17 @@
 Main Application Entry Point
 Multi-Agent MCP System for Software Generation
 Using WorkflowOrchestrator with Real MCP Agents
+Supports both CLI and Gradio UI modes
 """
 
 import logging
 import sys
 import os
+import argparse
+from typing import Dict, Any, Tuple
 from config.settings import Settings
 from server.local_server import LocalServer
+from frontend.ui import GradioUI
 
 
 def setup_logging():
@@ -172,35 +176,8 @@ def run_with_workflow_orchestrator(requirements: str, enable_memory=False, max_i
         if api_tracker:
             usage_stats = api_tracker.get_usage_statistics()
             logger.info(f"\nAPI Usage Statistics:")
-            
-            # Calculate session-specific usage by finding where this session's entries start
-            # Session ID format: 20251207_012650
-            # Timestamp format: 2025-12-07T01:26:50.123456
-            # Convert session_id to match timestamp format: 2025-12-07T01:26
-            session_date_part = f"{session_id[:4]}-{session_id[4:6]}-{session_id[6:8]}T{session_id[9:11]}:{session_id[11:13]}"
-            
-            # DEBUG: Log what we're searching for
-            logger.info(f"DEBUG: Looking for session timestamps starting with: {session_date_part}")
-            logger.info(f"DEBUG: Total entries in usage_log: {len(api_tracker.usage_log)}")
-            
-            # Sample first few entries to see timestamp format
-            if api_tracker.usage_log:
-                logger.info(f"DEBUG: Sample timestamp from log: {api_tracker.usage_log[0].get('timestamp', 'NO_TIMESTAMP')}")
-            
-            # Find entries from this session
-            session_entries = [e for e in api_tracker.usage_log 
-                             if e.get('timestamp', '').startswith(session_date_part)]
-            
-            logger.info(f"DEBUG: Found {len(session_entries)} matching session entries")
-            
-            if session_entries:
-                session_tokens = sum(e.get('tokens', 0) for e in session_entries)
-                session_calls = len(session_entries)
-                
-                logger.info(f"This Session: {session_tokens:,} tokens in {session_calls} API calls")
-                logger.info(f"Total (All Runs): {usage_stats.get('total_tokens', 0):,} tokens")
-            else:
-                logger.info(f"Total tokens used: {usage_stats.get('total_tokens', 0):,}")
+            logger.info(f"Total tokens used: {usage_stats.get('total_tokens', 0):,}")
+            logger.info(f"Total API calls: {usage_stats.get('call_count', 0)}")
         
         return result
         
@@ -265,9 +242,72 @@ if __name__ == "__main__":
     return results['success']
 
 
+
+
+# ============================================================================
+# MAIN FUNCTIONS
+# ============================================================================
+
 def main():
-    """Main application function"""
+    """Main entry point - handles both CLI and UI modes"""
     setup_logging()
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='AICoder - Multi-Agent Code Generation System',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  python main.py              # Run in CLI mode (default)
+  python main.py --ui         # Launch Gradio web UI
+  python main.py --ui --share # Launch Gradio web UI with public sharing
+        '''
+    )
+    parser.add_argument(
+        '--ui',
+        action='store_true',
+        help='Launch Gradio web UI instead of CLI mode'
+    )
+    parser.add_argument(
+        '--share',
+        action='store_true',
+        help='Create a public Gradio share link (only works with --ui)'
+    )
+    
+    args = parser.parse_args()
+    
+    # Check MCP configuration first
+    config_valid, config_msg = check_mcp_configuration()
+    
+    if not config_valid:
+        print(f"⚠️  WARNING: {config_msg}")
+        print("Set MCP_API_KEY environment variable before running")
+        print("\nℹ️  Setup instructions:")
+        print("   1. Copy .env.example to .env")
+        print("   2. Add your API key: MCP_API_KEY=your_key_here")
+        print("   3. Run again")
+        sys.exit(1)
+    
+    # Launch appropriate mode
+    if args.ui:
+        print("=" * 60)
+        print("AICoder - Multi-Agent Code Generator (UI Mode)")
+        print("=" * 60)
+        print(f"✓ {config_msg}")
+        print(f"🌐 Launching Gradio UI on {Settings.UI_HOST}:{Settings.UI_PORT}...")
+        if args.share:
+            print("🔗 Creating public share link...")
+        print("")
+        
+        ui = GradioUI()
+        ui.launch(share=args.share)
+    else:
+        # Run CLI mode
+        main_cli()
+
+
+def main_cli():
+    """Main CLI application function"""
     logger = logging.getLogger(__name__)
     
     print("=" * 60)
