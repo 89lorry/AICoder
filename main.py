@@ -113,7 +113,7 @@ def initialize_agents(enable_memory=False):
         )
         logger.info("Agent D (Debugger) initialized")
         
-        return architect, coder, tester, debugger, local_server, api_tracker
+        return architect, coder, tester, debugger, local_server, api_tracker, session_id
         
     except ImportError as e:
         logger.error(f"Failed to import required modules: {e}")
@@ -148,7 +148,7 @@ def run_with_workflow_orchestrator(requirements: str, enable_memory=False, max_i
         logger.error("Failed to initialize agents")
         return None
     
-    architect, coder, tester, debugger, local_server, api_tracker = agents_result
+    architect, coder, tester, debugger, local_server, api_tracker, session_id = agents_result
     
     try:
         # Import WorkflowOrchestrator
@@ -172,7 +172,35 @@ def run_with_workflow_orchestrator(requirements: str, enable_memory=False, max_i
         if api_tracker:
             usage_stats = api_tracker.get_usage_statistics()
             logger.info(f"\nAPI Usage Statistics:")
-            logger.info(f"Total tokens used: {usage_stats.get('total_tokens', 0)}")
+            
+            # Calculate session-specific usage by finding where this session's entries start
+            # Session ID format: 20251207_012650
+            # Timestamp format: 2025-12-07T01:26:50.123456
+            # Convert session_id to match timestamp format: 2025-12-07T01:26
+            session_date_part = f"{session_id[:4]}-{session_id[4:6]}-{session_id[6:8]}T{session_id[9:11]}:{session_id[11:13]}"
+            
+            # DEBUG: Log what we're searching for
+            logger.info(f"DEBUG: Looking for session timestamps starting with: {session_date_part}")
+            logger.info(f"DEBUG: Total entries in usage_log: {len(api_tracker.usage_log)}")
+            
+            # Sample first few entries to see timestamp format
+            if api_tracker.usage_log:
+                logger.info(f"DEBUG: Sample timestamp from log: {api_tracker.usage_log[0].get('timestamp', 'NO_TIMESTAMP')}")
+            
+            # Find entries from this session
+            session_entries = [e for e in api_tracker.usage_log 
+                             if e.get('timestamp', '').startswith(session_date_part)]
+            
+            logger.info(f"DEBUG: Found {len(session_entries)} matching session entries")
+            
+            if session_entries:
+                session_tokens = sum(e.get('tokens', 0) for e in session_entries)
+                session_calls = len(session_entries)
+                
+                logger.info(f"This Session: {session_tokens:,} tokens in {session_calls} API calls")
+                logger.info(f"Total (All Runs): {usage_stats.get('total_tokens', 0):,} tokens")
+            else:
+                logger.info(f"Total tokens used: {usage_stats.get('total_tokens', 0):,}")
         
         return result
         

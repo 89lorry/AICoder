@@ -82,8 +82,17 @@ class WorkflowOrchestrator:
             architectural_plan = self.architect.create_complete_architecture(requirements)
             result["architectural_plan"] = architectural_plan
             
+            # DEBUG: Log what architect returned
+            self.logger.info(f"DEBUG: Architect returned plan with keys: {list(architectural_plan.keys())}")
+            if 'detailed_plan' in architectural_plan:
+                detailed_plan = architectural_plan['detailed_plan']
+                self.logger.info(f"DEBUG: detailed_plan has {len(detailed_plan)} keys: {list(detailed_plan.keys())}")
+            else:
+                self.logger.error("DEBUG: Architect plan MISSING detailed_plan!")
+            
             # Step 2: Coder - Generate all code files (1 API call)
             self.logger.info("\n[Step 2] Coder: Generating all code files...")
+            self.logger.info(f"DEBUG: Passing plan to coder with keys: {list(architectural_plan.keys())}")
             self.coder.receive_architecture(architectural_plan)
             self._wait_for_rate_limit()
             code = self.coder.generate_code()

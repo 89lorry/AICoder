@@ -78,6 +78,14 @@ class AgentCoder:
         """
         self.architectural_plan = architectural_plan
         self.logger.info("Received architectural plan from Architect agent")
+        
+        # DEBUG: Log what was actually received
+        detailed_plan = architectural_plan.get('detailed_plan', {})
+        if detailed_plan:
+            self.logger.info(f"✓ detailed_plan received with {len(detailed_plan)} keys: {list(detailed_plan.keys())}")
+        else:
+            self.logger.warning("⚠️ detailed_plan is EMPTY or missing!")
+            self.logger.warning(f"Architectural plan keys: {list(architectural_plan.keys())}")
     
     def regenerate_code(self, regeneration_instructions: Dict[str, Any]) -> Dict[str, str]:
         """
@@ -332,17 +340,25 @@ Start your response directly with the first line of Python code (imports or docs
                     file_plan = plan
                     break
         
-        prompt = f"""Generate complete, executable Python code for the file: {filename}
+        prompt = f"""
+╔══════════════════════════════════════════════════════════════════════════╗
+║                    🚨 CRITICAL RULES - READ FIRST 🚨                     ║
+╚══════════════════════════════════════════════════════════════════════════╝
 
-File Description: {description}
+⚠️ SELF-VALIDATION CHECKLIST - Before writing ANY code, verify:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+☐ ALL data retrieval methods RETURN values (not print)
+☐ ALL query/search methods RETURN results (not print)
+☐ ONLY main() or display_* functions print to user
+☐ Action methods can print confirmations BUT must RETURN status
+☐ Data layer is completely separated from presentation layer
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Architectural Context:
-{self._format_architectural_context()}
+🎯 THE ONE RULE THAT MATTERS:
+   DATA METHODS → RETURN VALUES
+   MAIN FUNCTION → PRINTS RESULTS
 
-File-Specific Plan:
-{file_plan if file_plan else 'No specific plan provided'}
-
-⚠️ API CONTRACT RULES (CRITICAL - READ FIRST):
+⚠️ API CONTRACT RULES (THIS DETERMINES IF TESTS PASS OR FAIL):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CORE PRINCIPLE: Separate Data Logic from Presentation Logic
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -505,13 +521,36 @@ Start your response directly with the first line of Python code (imports or docs
             }
         
         # Build combined prompt for all files
-        prompt = f"""Generate ALL code files for this Python project in ONE response as JSON.
+        # Format detailed plan as readable text - ALWAYS show it, even if empty
+        detailed_plan = self.architectural_plan.get('detailed_plan', {})
+        import json
+        # Always format as JSON so coder can see the structure
+        detailed_plan_str = json.dumps(detailed_plan, indent=2)
+        
+        prompt = f"""
+╔══════════════════════════════════════════════════════════════════════════╗
+║                    🚨 CRITICAL RULES - READ FIRST 🚨                     ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+⚠️ SELF-VALIDATION CHECKLIST - Before generating ANY code:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+☐ ALL data retrieval methods RETURN values (not print)
+☐ ALL query/search methods RETURN results (not print)
+☐ ONLY main() or display_* functions print to user
+☐ Action methods can print confirmations BUT must RETURN status
+☐ Data layer is completely separated from presentation layer
+☐ NO 'if __name__ == "__main__":' block in main.py (tests import directly!)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 THE ONE RULE: Data methods RETURN, main() prints
+
+Generate ALL code files for this Python project in ONE response as JSON.
 
 Architectural Context:
 {self._format_architectural_context()}
 
 Detailed Plan:
-{self.architectural_plan.get('detailed_plan', {})}
+{detailed_plan_str}
 
 FILES TO GENERATE:
 {chr(10).join(f'- {fname}: {desc}' for fname, desc in files.items())}

@@ -71,7 +71,24 @@ class AgentArchitect:
         self.requirements = requirements
         self.logger.info("Creating complete architecture in ONE API call...")
         
-        prompt = f"""Create a COMPLETE architectural plan for the following requirements in a SINGLE response:
+        prompt = f"""
+╔══════════════════════════════════════════════════════════════════════════╗
+║          🚨 CRITICAL ARCHITECTURE RULES - READ FIRST 🚨                 ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+⚠️ SELF-VALIDATION CHECKLIST - Before creating the plan:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+☐ Have I specified that data methods must RETURN values?
+☐ Have I specified that query/search methods must RETURN results?
+☐ Have I specified that main() handles printing?
+☐ Have I limited components to EXACTLY 3?
+☐ Have I specified ALL classes go in main.py?
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 THE ONE RULE THAT MATTERS:
+   In your detailed_plan, specify: "Data methods RETURN, main() prints"
+
+Create a COMPLETE architectural plan for the following requirements in a SINGLE response:
 
 Requirements:
 {requirements}
@@ -171,7 +188,7 @@ Response MUST be parseable JSON starting with {{ and ending with }}.
                 )
             
             # Parse complete response
-            plan = self._parse_complete_architecture(response)
+            plan = self._parse_complete_architecture(response_text)
             plan["requirements"] = requirements
             plan["timestamp"] = datetime.now().isoformat()
             
@@ -179,6 +196,13 @@ Response MUST be parseable JSON starting with {{ and ending with }}.
             self.logger.info("Complete architecture created in ONE API call")
             self.logger.info(f"Components: {len(plan.get('analysis', {}).get('components', []))}")
             self.logger.info(f"Files: {list(plan.get('file_structure', {}).get('files', {}).keys())}")
+            
+            # DEBUG: Verify detailed_plan was parsed
+            detailed_plan = plan.get('detailed_plan', {})
+            if detailed_plan:
+                self.logger.info(f"✓ detailed_plan parsed with {len(detailed_plan)} keys: {list(detailed_plan.keys())}")
+            else:
+                self.logger.error("❌ detailed_plan is MISSING after parsing!")
             
             return plan
             
@@ -206,21 +230,57 @@ Response MUST be parseable JSON starting with {{ and ending with }}.
     def _parse_complete_architecture(self, response: Any) -> Dict[str, Any]:
         """Parse complete architecture response from MCP"""
         try:
+            # DEBUG: Log what we're parsing
+            self.logger.info(f"DEBUG: _parse_complete_architecture received type: {type(response)}")
+            
             if isinstance(response, dict):
+                self.logger.info("DEBUG: Response is dict, checking if it has detailed_plan...")
+                if 'detailed_plan' in response:
+                    self.logger.info(f"DEBUG: Dict has detailed_plan with {len(response['detailed_plan'])} keys")
+                else:
+                    self.logger.warning("DEBUG: Dict MISSING detailed_plan!")
                 return response
             
             response_text = str(response)
+            self.logger.info(f"DEBUG: Response text length: {len(response_text)}")
+            self.logger.info(f"DEBUG: First 200 chars: {response_text[:200]}")
             
-            # Extract JSON from response
+            # FIX: Strip markdown code blocks FIRST
+            # Remove ```json or ``` from beginning
+            lines = response_text.split('\n')
+            cleaned_lines = []
+            for line in lines:
+                stripped = line.strip()
+                # Skip markdown code block markers
+                if stripped in ['```json', '```', '```JSON']:
+                    continue
+                cleaned_lines.append(line)
+            
+            response_text = '\n'.join(cleaned_lines)
+            self.logger.info(f"DEBUG: After markdown removal, length: {len(response_text)}")
+            
+            # Extract JSON from response - find FIRST { and LAST }
             if '{' in response_text and '}' in response_text:
                 start = response_text.find('{')
                 end = response_text.rfind('}') + 1
                 json_str = response_text[start:end]
+                self.logger.info(f"DEBUG: Extracted JSON length: {len(json_str)}")
+                self.logger.info(f"DEBUG: JSON first 100 chars: {json_str[:100]}")
+                
                 parsed = json.loads(json_str)
+                self.logger.info(f"DEBUG: Parsed JSON has keys: {list(parsed.keys())}")
                 
                 # Validate structure
                 if 'analysis' in parsed and 'file_structure' in parsed and 'detailed_plan' in parsed:
+                    detailed_plan = parsed.get('detailed_plan', {})
+                    self.logger.info(f"DEBUG: ✅ Validated! detailed_plan has {len(detailed_plan)} keys: {list(detailed_plan.keys())}")
                     return parsed
+                else:
+                    self.logger.error(f"DEBUG: ❌ Validation FAILED! Missing required keys. Has: {list(parsed.keys())}")
+                    # Still return parsed if it has at least one of the required keys
+                    if any(key in parsed for key in ['analysis', 'file_structure', 'detailed_plan']):
+                        self.logger.warning("DEBUG: Returning partially valid structure")
+                        return parsed
             
             # Fallback: create structured response
             self.logger.warning("Could not parse complete JSON, using fallback structure")
