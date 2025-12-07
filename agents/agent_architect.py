@@ -116,43 +116,6 @@ Provide a comprehensive JSON response with ALL of the following sections:
     }}
 }}
 
-3. "detailed_plan": {{
-    "overview": "overall architecture description",
-    "file_plans": {{
-        "main.py": {{
-            "purpose": "what it does",
-            "classes": ["Class1", "Class2"],
-            "functions": ["func1", "func2"],
-            "key_logic": "main logic flow",
-            "api_contracts": {{
-                "ClassName.data_method": "RETURNS data/list/dict (does NOT print)",
-                "ClassName.query_method": "RETURNS results (does NOT print)",
-                "ClassName.action_method": "Can print confirmation, RETURNS success status"
-            }},
-            "design_principles": [
-                "Data retrieval methods RETURN values",
-                "Query/search methods RETURN results",
-                "Action methods can print status, but RETURN success indicators",
-                "main() or display functions handle printing",
-                "Separation: data layer returns, presentation layer prints"
-            ]
-        }},
-        "utils.py": {{
-            "purpose": "what it does",
-            "functions": ["helper1", "helper2"],
-            "imports": ["from main import ClassName"]
-        }},
-        "test_data.py": {{
-            "purpose": "sample data",
-            "imports": ["from main import ClassName"],
-            "data_examples": ["sample1", "sample2"]
-        }}
-    }},
-    "implementation_order": ["main.py", "utils.py", "test_data.py"],
-    "test_considerations": ["what to test"],
-    "notes": ["important notes"]
-}}
-
 CRITICAL RULES:
 - EXACTLY 3 components in analysis
 - ALL classes defined in main.py ONLY
@@ -162,6 +125,44 @@ CRITICAL RULES:
 
 Response MUST be parseable JSON starting with {{ and ending with }}.
 """
+# Optional detailed plan, better code but increasing text content count that might dilute critical rules
+# 3. "detailed_plan": {{
+#     "overview": "overall architecture description",
+#     "file_plans": {{
+#         "main.py": {{
+#             "purpose": "what it does",
+#             "classes": ["Class1", "Class2"],
+#             "functions": ["func1", "func2"],
+#             "key_logic": "main logic flow",
+#             "api_contracts": {{
+#                 "ClassName.data_method": "RETURNS data/list/dict (does NOT print)",
+#                 "ClassName.query_method": "RETURNS results (does NOT print)",
+#                 "ClassName.action_method": "Can print confirmation, RETURNS success status"
+#             }},
+#             "design_principles": [
+#                 "Data retrieval methods RETURN values",
+#                 "Query/search methods RETURN results",
+#                 "Action methods can print status, but RETURN success indicators",
+#                 "main() or display functions handle printing",
+#                 "Separation: data layer returns, presentation layer prints"
+#             ]
+#         }},
+#         "utils.py": {{
+#             "purpose": "what it does",
+#             "functions": ["helper1", "helper2"],
+#             "imports": ["from main import ClassName"]
+#         }},
+#         "test_data.py": {{
+#             "purpose": "sample data",
+#             "imports": ["from main import ClassName"],
+#             "data_examples": ["sample1", "sample2"]
+#         }}
+#     }},
+#     "implementation_order": ["main.py", "utils.py", "test_data.py"],
+#     "test_considerations": ["what to test"],
+#     "notes": ["important notes"]
+# }}
+
         
         try:
             # Use MCP client to get complete architecture

@@ -259,6 +259,18 @@ Test Output (last 2000 chars):
 
 Attempt: {attempt}/{self.max_fix_iterations}
 
+Before analyzing complex logic:
+1. Check if __str__ returns correct format
+2. Check if object is being printed without str()
+3. Check if mock inputs match actual input() calls
+4. Check if return values are correct type
+
+Most test failures are formatting issues, not logic issues!
+
+Example: If test expects "Name: Bob" but gets "Contact(name='Bob')"
+→ Fix __str__ to return "Name: Bob" format
+→ DON'T redesign the entire class structure
+
 ⚠️ CRITICAL TESTING PATTERNS - Read carefully before fixing tests:
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

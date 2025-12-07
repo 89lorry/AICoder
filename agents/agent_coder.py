@@ -525,7 +525,9 @@ Start your response directly with the first line of Python code (imports or docs
         detailed_plan = self.architectural_plan.get('detailed_plan', {})
         import json
         # Always format as JSON so coder can see the structure
-        detailed_plan_str = json.dumps(detailed_plan, indent=2)
+        # COMMENTED OUT: detailed_plan_str = json.dumps(detailed_plan, indent=2)
+        # SUPPRESSED: Passing detailed_plan to coder - analysis shows it causes cognitive overload
+        detailed_plan_str = "{}"  # Suppressed - too much context confuses AI
         
         prompt = f"""
 ╔══════════════════════════════════════════════════════════════════════════╗
