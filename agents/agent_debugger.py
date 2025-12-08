@@ -251,8 +251,34 @@ class AgentDebugger:
             code = self.fixed_code if self.fixed_code else self.code_package.get("code", {})
             test_output = self.test_results.get('output', '') if self.test_results else ''
             
+            # Build summary of previous attempts if any
+            previous_attempts_summary = ""
+            if attempt > 1:
+                previous_attempts_summary = "\n\n" + "="*60 + "\n"
+                previous_attempts_summary += "PREVIOUS ATTEMPTS - LEARN FROM THESE!\n"
+                previous_attempts_summary += "="*60 + "\n"
+                for prev in all_attempts:
+                    previous_attempts_summary += f"\n--- Attempt {prev['attempt']} ---\n"
+                    if prev.get('fixed_files'):
+                        previous_attempts_summary += f"Files modified: {', '.join(prev.get('fixed_files', []))}\n"
+                    previous_attempts_summary += f"Test result: {'✓ PASSED' if prev.get('test_passed') else '✗ FAILED'}\n"
+                    if not prev.get('test_passed'):
+                        test_output_snippet = prev.get('test_output', 'Unknown')[:300]
+                        previous_attempts_summary += f"Test errors:\n{test_output_snippet}...\n"
+                    if 'analysis' in prev and 'summary' in prev['analysis']:
+                        analysis_snippet = prev['analysis']['summary'][:400]
+                        previous_attempts_summary += f"Analysis done:\n{analysis_snippet}...\n"
+                    if 'error' in prev:
+                        previous_attempts_summary += f"Error encountered: {prev['error']}\n"
+                previous_attempts_summary += "\n" + "="*60 + "\n"
+                previous_attempts_summary += "⚠️ CRITICAL: Review the above attempts carefully!\n"
+                previous_attempts_summary += "⚠️ DO NOT repeat the same approach that failed!\n"
+                previous_attempts_summary += "⚠️ Try a COMPLETELY DIFFERENT fix strategy!\n"
+                previous_attempts_summary += "="*60 + "\n"
+            
             # Build combined prompt for analyze + fix + update tests
             prompt = f"""You are debugging code that failed tests. Provide fixes as a structured response.
+{previous_attempts_summary}
 
 Test Failures:
 {self._format_failures(failures)}

@@ -73,7 +73,7 @@ class PythonMCPServer:
                 mcp_client=self.mcp_client,
                 api_usage_tracker=self.api_tracker,
                 local_server=self.local_server,
-                enable_memory=False
+                enable_memory=True
             )
         else:
             raise ValueError(f"Unknown agent type: {agent_type}")

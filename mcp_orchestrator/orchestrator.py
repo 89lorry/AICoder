@@ -100,6 +100,61 @@ class MCPOrchestrator:
         self.servers[server_name]['request_id'] += 1
         return self.servers[server_name]['request_id']
         
+    async def _read_full_response(self, process, server_name: str) -> str:
+        """
+        Read complete JSON response even if it spans multiple buffer reads.
+        This handles large responses that exceed readline() buffer limits.
+        
+        Args:
+            process: The subprocess to read from
+            server_name: Name of the server (for logging)
+            
+        Returns:
+            Complete response text as string
+        """
+        response_data = b""
+        chunk_size = 8192  # 8KB chunks
+        
+        while True:
+            try:
+                chunk = await asyncio.wait_for(
+                    process.stdout.read(chunk_size),
+                    timeout=1.0  # Short timeout per chunk
+                )
+            except asyncio.TimeoutError:
+                # If we have accumulated data and it looks complete, try to parse it
+                if response_data:
+                    try:
+                        response_text = response_data.decode()
+                        if response_text.strip():
+                            json.loads(response_text.strip())
+                            return response_text.strip()
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        pass  # Keep waiting
+                continue
+            
+            if not chunk:
+                # End of stream - check if we have valid data
+                if response_data:
+                    response_text = response_data.decode()
+                    return response_text.strip()
+                return ""
+            
+            response_data += chunk
+            
+            # Check if we have a complete JSON object ending with newline
+            try:
+                response_text = response_data.decode()
+                if '\n' in response_text:
+                    # Found newline - try to parse the JSON
+                    response_text = response_text.strip()
+                    json.loads(response_text)  # Validate JSON
+                    self.logger.debug(f"Successfully read {len(response_data)} bytes from {server_name}")
+                    return response_text
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                # Not complete yet, keep reading
+                continue
+    
     async def _send_request(self, server_name: str, request: Dict[str, Any]) -> Dict[str, Any]:
         """Send JSON-RPC request to server and wait for response"""
         server = self.servers[server_name]
@@ -110,9 +165,12 @@ class MCPOrchestrator:
         process.stdin.write(request_str.encode())
         await process.stdin.drain()
         
-        # Read response with timeout (300s for all agents, especially debugger)
+        # Read response with timeout (600s for all agents, especially debugger)
         try:
-            response_line = await asyncio.wait_for(process.stdout.readline(), timeout=300.0)
+            response_text = await asyncio.wait_for(
+                self._read_full_response(process, server_name),
+                timeout=600.0
+            )
         except asyncio.TimeoutError:
             # Check stderr for errors
             stderr_output = await process.stderr.read(1000)
@@ -120,15 +178,14 @@ class MCPOrchestrator:
             self.logger.error(f"Server stderr: {stderr_output.decode()}")
             raise RuntimeError(f"Timeout waiting for response from {server_name} server")
         
-        if not response_line:
+        if not response_text:
             # Check stderr for errors
             stderr_output = await process.stderr.read(1000)
             self.logger.error(f"No response from {server_name}")
             self.logger.error(f"Server stderr: {stderr_output.decode()}")
             raise RuntimeError(f"No response from {server_name} server")
         
-        response_text = response_line.decode().strip()
-        self.logger.debug(f"Response from {server_name}: {response_text[:200]}")
+        self.logger.debug(f"Response from {server_name}: {response_text[:200]}...")
         
         try:
             response = json.loads(response_text)
