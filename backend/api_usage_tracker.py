@@ -1,3 +1,9 @@
+# Project Group 3
+# Peter Xie (28573670)
+# Xin Tang (79554618)
+# Keyan Miao (42708776)
+# Keyi Feng (84254877)
+
 """
 API Usage Tracker Module
 Tracks and monitors API token usage for MCP calls
@@ -50,16 +56,39 @@ class APIUsageTracker:
             self.usage_log = []
     
     def _persist_usage_locked(self) -> None:
-        """Persist usage information to disk. Call only while holding the lock."""
+        """Persist usage information to disk with merge support for multi-process."""
         self.persist_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Load existing data from file to merge (for multi-process MCP mode)
+        existing_total = 0
+        existing_log = []
+        if self.persist_path.exists():
+            try:
+                with self.persist_path.open("r", encoding="utf-8") as handle:
+                    existing_data = json.load(handle)
+                    existing_total = existing_data.get("total_tokens", 0)
+                    existing_log = existing_data.get("usage_log", [])
+            except (json.JSONDecodeError, OSError):
+                # File corrupted, start fresh
+                pass
+        
+        # Merge: combine existing with current instance data
+        # This ensures multi-process agents don't overwrite each other
+        merged_total = existing_total + self.total_tokens
+        merged_log = existing_log + self.usage_log
+        
         payload = {
-            "total_tokens": self.total_tokens,
-            "usage_log": self.usage_log,
+            "total_tokens": merged_total,
+            "usage_log": merged_log,
             "last_updated": datetime.utcnow().isoformat(),
         }
         
         with self.persist_path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
+        
+        # Update instance to reflect merged state
+        self.total_tokens = merged_total
+        self.usage_log = merged_log
     
     def track_usage(
         self,

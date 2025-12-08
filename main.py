@@ -1,3 +1,9 @@
+# Project Group 3
+# Peter Xie (28573670)
+# Xin Tang (79554618)
+# Keyan Miao (42708776)
+# Keyi Feng (84254877)
+
 """
 Main Application Entry Point
 Multi-Agent MCP System for Software Generation
@@ -259,6 +265,7 @@ def main():
         epilog='''
 Examples:
   python main.py              # Run in CLI mode (default)
+  python main.py --mcp        # Run with MCP protocol (agent servers)
   python main.py --ui         # Launch Gradio web UI
   python main.py --ui --share # Launch Gradio web UI with public sharing
         '''
@@ -272,6 +279,11 @@ Examples:
         '--share',
         action='store_true',
         help='Create a public Gradio share link (only works with --ui)'
+    )
+    parser.add_argument(
+        '--mcp',
+        action='store_true',
+        help='Use MCP protocol for agent communication (JSON-RPC over stdio)'
     )
     
     args = parser.parse_args()
@@ -291,18 +303,27 @@ Examples:
     # Launch appropriate mode
     if args.ui:
         print("=" * 60)
-        print("AICoder - Multi-Agent Code Generator (UI Mode)")
+        if args.mcp:
+            print("AICoder - Multi-Agent Code Generator (UI Mode with MCP)")
+            print("Using Model Context Protocol (JSON-RPC)")
+        else:
+            print("AICoder - Multi-Agent Code Generator (UI Mode)")
         print("=" * 60)
         print(f"✓ {config_msg}")
         print(f"🌐 Launching Gradio UI on {Settings.UI_HOST}:{Settings.UI_PORT}...")
         if args.share:
             print("🔗 Creating public share link...")
+        if args.mcp:
+            print("🔗 MCP mode enabled - agents will communicate via JSON-RPC")
         print("")
         
-        ui = GradioUI()
+        ui = GradioUI(use_mcp=args.mcp)
         ui.launch(share=args.share)
+    elif args.mcp:
+        # Run MCP mode
+        main_mcp()
     else:
-        # Run CLI mode
+        # Run CLI mode (default)
         main_cli()
 
 
@@ -417,6 +438,79 @@ I need a contact management system where I can:
         print("\n\n⚠️  Process interrupted by user")
     except Exception as e:
         logger.error(f"Unexpected error in main: {e}", exc_info=True)
+        print(f"\n❌ Error: {e}")
+        sys.exit(1)
+
+
+def main_mcp():
+    """Main MCP mode - uses true MCP protocol with JSON-RPC"""
+    logger = logging.getLogger(__name__)
+    
+    print("=" * 60)
+    print("MCP Multi-Agent Software Generation System")
+    print("Using Model Context Protocol (JSON-RPC over stdio)")
+    print("=" * 60)
+    
+    try:
+        # Check MCP configuration
+        config_valid, config_msg = check_mcp_configuration()
+        
+        if not config_valid:
+            print(f"\n⚠️  WARNING: {config_msg}")
+            print("Set MCP_API_KEY environment variable to use MCP mode")
+            return
+        
+        print(f"\n✓ {config_msg}")
+        print("🚀 Starting MCP Orchestrator with agent servers...\n")
+        
+        requirements = """
+Create a basic calculator
+"""
+        
+        print("📋 Requirements:")
+        print("-" * 60)
+        print(requirements)
+        print("-" * 60)
+        
+        # Run MCP workflow using asyncio
+        import asyncio
+        from mcp_orchestrator import MCPOrchestrator
+        
+        async def run_mcp_workflow():
+            orchestrator = MCPOrchestrator()
+            result = await orchestrator.run_workflow(requirements)
+            return result
+        
+        result = asyncio.run(run_mcp_workflow())
+        
+        # Display results
+        print("\n" + "=" * 60)
+        print("📊 MCP WORKFLOW RESULTS")
+        print("=" * 60)
+        print(f"Status: {result['final_status']}")
+        
+        if result['final_status'] == 'success':
+            print("\n✅ Code generation and testing completed successfully via MCP!")
+            
+            if result.get('code_package'):
+                code_package = result['code_package']
+                files = code_package.get('files', {})
+                print(f"\n📁 Generated Files ({len(files)}):")
+                for filename in files:
+                    print(f"   - {filename}")
+        elif result['final_status'] == 'error':
+            print(f"\n❌ Error occurred: {result.get('error', 'Unknown error')}")
+        else:
+            print("\n⚠️  Workflow completed but tests did not pass")
+        
+        print("\n✅ MCP Process completed!")
+        print("\nℹ️  All agents communicated via JSON-RPC protocol over stdio")
+        
+    except KeyboardInterrupt:
+        logger.info("\nProcess interrupted by user")
+        print("\n\n⚠️  Process interrupted by user")
+    except Exception as e:
+        logger.error(f"Unexpected error in MCP mode: {e}", exc_info=True)
         print(f"\n❌ Error: {e}")
         sys.exit(1)
 

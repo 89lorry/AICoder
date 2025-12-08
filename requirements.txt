@@ -1,37 +1,69 @@
-# MCP Multi-Agent System Requirements
+# AICoder - Multi-Agent Code Generation System with MCP Protocol
+# Updated for True Model Context Protocol Implementation
 
-# Core dependencies
+# ============================================================================
+# CORE DEPENDENCIES (Required)
+# ============================================================================
+
+# Testing framework
 pytest>=7.4.0
 pytest-cov>=4.1.0
 pytest-timeout>=2.2.0
 
-# LangChain for agent memory and chains
-langchain>=0.1.0
-langchain-core>=0.1.0
-langchain-community>=0.0.20
-langchain-openai>=0.1.0
-langchain-anthropic>=0.1.0
-
-# LLM providers (adjust based on your MCP provider)
-openai>=1.0.0
-anthropic>=0.7.0
-
-# Memory backends
-chromadb>=0.4.0
-# faiss-cpu is difficult to build on macOS; only install on Linux by default
-faiss-cpu>=1.7.4; platform_system == "Linux"
-
-# MCP Protocol
-# Note: Add specific MCP SDK when available
-# mcp-sdk>=1.0.0
-
-# Web framework (if needed for UI)
-flask>=2.3.0
+# Web UI framework
 gradio>=4.0.0
-requests>=2.31.0
 
-# Utilities
+# Environment configuration
 python-dotenv>=1.0.0
 
-# Code execution and testing
-subprocess32>=3.5.4; python_version < '3'
+# HTTP requests
+requests>=2.31.0
+
+# Google Generative AI (Gemini API) - Primary LLM provider
+google-generativeai>=0.3.0
+
+# ============================================================================
+# OPTIONAL DEPENDENCIES (For advanced features)
+# ============================================================================
+
+# LangChain for agent memory (optional - disabled by default)
+# Uncomment if ENABLE_MEMORY=true in .env
+# langchain>=0.1.0
+# langchain-core>=0.1.0
+# langchain-community>=0.0.20
+
+# Alternative LLM providers (optional)
+# openai>=1.0.0
+# anthropic>=0.7.0
+
+# Memory backends (optional - only needed if using LangChain memory)
+# chromadb>=0.4.0
+# faiss-cpu>=1.7.4; platform_system == "Linux"
+
+# Web framework (optional - Flask not currently used)
+# flask>=2.3.0
+
+# ============================================================================
+# MCP PROTOCOL NOTES
+# ============================================================================
+# This project implements true Model Context Protocol (MCP) using:
+# - JSON-RPC 2.0 over stdio
+# - Process-isolated agent servers
+# - Standards-compliant MCP specification
+#
+# All MCP components are implemented in pure Python using:
+# - asyncio (built-in)
+# - json (built-in)
+# - subprocess (built-in)
+#
+# No external MCP SDK is required!
+
+# ============================================================================
+# INSTALLATION
+# ============================================================================
+# Install required dependencies:
+#   pip install -r requirements.txt
+#
+# For development with all optional features:
+#   pip install -r requirements.txt
+#   # Then uncomment and install optional dependencies above

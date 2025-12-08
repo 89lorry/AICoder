@@ -1,3 +1,9 @@
+# Project Group 3
+# Peter Xie (28573670)
+# Xin Tang (79554618)
+# Keyan Miao (42708776)
+# Keyi Feng (84254877)
+
 """
 Agents Package
 Contains all MCP agents for the multi-agent system

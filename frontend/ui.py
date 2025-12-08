@@ -1,3 +1,9 @@
+# Project Group 3
+# Peter Xie (28573670)
+# Xin Tang (79554618)
+# Keyan Miao (42708776)
+# Keyi Feng (84254877)
+
 """
 User Interface Module
 Handles user input for coding prompts and displays results
@@ -17,25 +23,51 @@ if _PROJECT_ROOT not in sys.path:
 from config.settings import Settings
 
 
-def _partition_files(files: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str, str]]:
+def _partition_files(files) -> Tuple[Dict[str, str], Dict[str, str]]:
     """Partition files into application and test files"""
     app_files, test_files = {}, {}
-    for path, content in files.items():
+    
+    # Handle both dict and list formats
+    if isinstance(files, dict):
+        items = files.items()
+    elif isinstance(files, list):
+        # If it's a list of dicts, extract name/filename and content
+        items = []
+        for f in files:
+            if isinstance(f, dict):
+                # Try different key names
+                name = f.get('name') or f.get('filename') or f.get('file_name') or f.get('path', '')
+                content = f.get('content') or f.get('code', '')
+                if name:  # Only add if we got a name
+                    items.append((name, content))
+                    logging.debug(f"List item: name={name}, content_len={len(content)}")
+            elif isinstance(f, str):
+                # If it's just a string (filename), skip it
+                continue
+        logging.info(f"Processed list into {len(items)} items")
+    else:
+        logging.warning(f"Unexpected files type: {type(files)}")
+        return app_files, test_files
+    
+    for path, content in items:
         if path.startswith("tests/") or path.lower().endswith("_test.py") or path.lower().startswith("test_"):
             test_files[path] = content
         else:
             app_files[path] = content
+    
+    logging.info(f"Partitioned: {len(app_files)} app files, {len(test_files)} test files")
     return app_files, test_files
 
 
 class GradioUI:
     """Gradio-based UI for code generation workflow"""
     
-    def __init__(self):
+    def __init__(self, use_mcp=False):
         # Initialize backend handler lazily
         self.backend_initialized = False
         self.orchestrator = None
         self.api_tracker = None
+        self.use_mcp = use_mcp
     
     def _initialize_backend(self):
         """Initialize backend components once"""
@@ -71,7 +103,14 @@ class GradioUI:
         try:
             import gradio as gr
             
-            # Initialize backend if needed
+            # Combine description and requirements
+            full_requirements = f"{description.strip()}\n\n{requirements.strip()}"
+            
+            # Use MCP mode if enabled
+            if self.use_mcp:
+                return self._on_generate_mcp(full_requirements, progress)
+            
+            # Initialize backend if needed (original mode)
             if not self._initialize_backend():
                 return (
                     {},
@@ -96,9 +135,6 @@ class GradioUI:
                     api_usage_file.unlink()
                 except Exception as e:
                     logging.error(f"Failed to delete api_usage.json: {e}")
-            
-            # Combine description and requirements
-            full_requirements = f"{description.strip()}\n\n{requirements.strip()}"
             
             # Update progress if available
             if progress is not None:
@@ -272,6 +308,137 @@ class GradioUI:
             return test_files.get(selected, "")
         return ""
     
+    def _on_generate_mcp(self, full_requirements: str, progress=None):
+        """Generate code & tests using MCP protocol"""
+        try:
+            import gradio as gr
+            import asyncio
+            from mcp_orchestrator import MCPOrchestrator
+            import json
+            from pathlib import Path
+            
+            # Clear api_usage.json at start of new session (like traditional mode)
+            api_usage_file = Path("api_usage.json")
+            if api_usage_file.exists():
+                try:
+                    api_usage_file.unlink()
+                    logging.info("Cleared api_usage.json for new MCP session")
+                except Exception as e:
+                    logging.error(f"Failed to delete api_usage.json: {e}")
+            
+            # Update progress if available
+            if progress is not None:
+                progress(0, desc="🔗 Connecting to MCP servers...")
+            
+            # Run MCP workflow
+            async def run_workflow():
+                orchestrator = MCPOrchestrator()
+                return await orchestrator.run_workflow(full_requirements)
+            
+            result = asyncio.run(run_workflow())
+            
+            # Signal workflow completion
+            if progress is not None:
+                progress(1.0, desc="✅ MCP Workflow completed!")
+            
+            if result and result.get('final_status') in ['success', 'partial_success']:
+                # Extract generated files
+                code_package = result.get('code_package', {})
+                
+                # Debug logging
+                logging.info(f"MCP result keys: {result.keys()}")
+                logging.info(f"code_package type: {type(code_package)}")
+                logging.info(f"code_package keys: {code_package.keys() if isinstance(code_package, dict) else 'not a dict'}")
+                
+                # Extract files - use 'code' key which has the actual content dictionary
+                files = None
+                if isinstance(code_package, dict):
+                    # Use 'code' first - this has the actual file contents dict
+                    files = code_package.get('code')
+                    # Fallback to 'files' only if it's a dict (not a list of filenames)
+                    if not files or isinstance(files, list):
+                        files_candidate = code_package.get('files')
+                        if isinstance(files_candidate, dict):
+                            files = files_candidate
+                    # Try direct code_package if it looks like files dict
+                    if not files and any(k.endswith('.py') for k in code_package.keys()):
+                        files = code_package
+                
+                if not files or not isinstance(files, dict):
+                    files = {}
+                    logging.warning(f"No valid files dict found in code_package")
+                    
+                logging.info(f"Extracted files type: {type(files)}")
+                logging.info(f"Extracted files count: {len(files) if isinstance(files, (dict, list)) else 0}")
+                
+                # Debug: Show first file structure
+                if isinstance(files, list) and len(files) > 0:
+                    logging.info(f"First file item type: {type(files[0])}")
+                    logging.info(f"First file item keys: {files[0].keys() if isinstance(files[0], dict) else 'not a dict'}")
+                    logging.info(f"First file item: {files[0]}")
+                
+                app_files, test_files = _partition_files(files)
+                
+                logging.info(f"After partition - app_files: {list(app_files.keys())}")
+                logging.info(f"After partition - test_files: {list(test_files.keys())}")
+                
+                # Build radio choices
+                app_choices = sorted(app_files.keys())
+                test_choices = sorted(test_files.keys())
+                
+                # Select default file
+                if app_choices:
+                    default_file = app_choices[0]
+                    unified_default = app_files[default_file]
+                    app_update = gr.update(choices=app_choices, value=default_file)
+                    test_update = gr.update(choices=test_choices, value=None)
+                elif test_choices:
+                    default_file = test_choices[0]
+                    unified_default = test_files[default_file]
+                    app_update = gr.update(choices=app_choices, value=None)
+                    test_update = gr.update(choices=test_choices, value=default_file)
+                else:
+                    unified_default = ""
+                    app_update = gr.update(choices=[], value=None)
+                    test_update = gr.update(choices=[], value=None)
+                
+                # Usage stats - read from api_usage.json (same as traditional mode)
+                usage_md, token_progress = self._generate_usage_display()
+                
+                return (
+                    app_files,
+                    test_files,
+                    app_update,
+                    test_update,
+                    unified_default,
+                    usage_md,
+                    token_progress,
+                )
+            else:
+                # Workflow failed
+                error_msg = result.get('error', 'MCP workflow failed') if result else 'MCP workflow failed'
+                return (
+                    {},
+                    {},
+                    gr.update(choices=[], value=None),
+                    gr.update(choices=[], value=None),
+                    f"❌ MCP Error: {error_msg}",
+                    "**MCP Mode**: Error occurred",
+                    0,
+                )
+        except Exception as e:
+            import gradio as gr
+            logging.error(f"Error in MCP mode: {e}", exc_info=True)
+            return (
+                {},
+                {},
+                gr.update(choices=[], value=None),
+                gr.update(choices=[], value=None),
+                f"❌ MCP Exception: {str(e)}",
+                "**MCP Mode**: Exception occurred",
+                0,
+            )
+    
     def launch(self, share: bool = False):
         """Launch Gradio UI"""
         try:
@@ -280,8 +447,10 @@ class GradioUI:
             print("❌ Gradio not installed. Install with: pip install gradio")
             return
         
+        mode_indicator = "🔗 MCP Mode (JSON-RPC Protocol)" if self.use_mcp else "🔄 Direct Mode (Python Calls)"
+        
         with gr.Blocks(title="AICoder - Multi-Agent Code Generator") as demo:
-            gr.Markdown("## AICoder — Multi-Agent Code & Test Generator")
+            gr.Markdown(f"## AICoder — Multi-Agent Code & Test Generator\n\n{mode_indicator}")
             
             app_files_state = gr.State({})
             test_files_state = gr.State({})

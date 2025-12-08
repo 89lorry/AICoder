@@ -1,3 +1,9 @@
+# Project Group 3
+# Peter Xie (28573670)
+# Xin Tang (79554618)
+# Keyan Miao (42708776)
+# Keyi Feng (84254877)
+
 """
 Server (Local Directory) Module
 Runs the written code and manages code packages
@@ -6,8 +12,14 @@ Runs the written code and manages code packages
 import os
 import subprocess
 import time
+import sys
 from datetime import datetime
 from utils.file_manager import FileManager
+
+# Debug print function that outputs to stderr to avoid interfering with MCP JSON-RPC
+def debug_print(*args, **kwargs):
+    """Print to stderr to avoid stdout pollution in MCP mode"""
+    print(*args, **kwargs, file=sys.stderr)
 
 
 class LocalServer:
@@ -46,7 +58,9 @@ class LocalServer:
         self.current_project = code_package.get("project_name", f"project_{int(time.time())}")
         self.current_project_path = self.file_manager.join_path(self.workspace_dir, self.current_project)
         
-        print(f"[LocalServer] Received code package: {self.current_project}")
+        # Use stderr to avoid interfering with stdout (needed for MCP JSON-RPC)
+        import sys
+        print(f"[LocalServer] Received code package: {self.current_project}", file=sys.stderr)
         return True
     
     def save_code_to_directory(self, code_package):
@@ -64,18 +78,18 @@ class LocalServer:
         
         # Create project directory (clean first if exists)
         if self.file_manager.directory_exists(self.current_project_path):
-            print(f"[LocalServer] Cleaning existing project directory: {self.current_project_path}")
+            debug_print(f"[LocalServer] Cleaning existing project directory: {self.current_project_path}")
             self.file_manager.delete_directory(self.current_project_path)
         
         self.file_manager.create_directory(self.current_project_path)
-        print(f"[LocalServer] Created project directory: {self.current_project_path}")
+        debug_print(f"[LocalServer] Created project directory: {self.current_project_path}")
         
         # Save all code files using FileManager
         files = code_package.get("files", {})
         for filename, content in files.items():
             filepath = self.file_manager.join_path(self.current_project_path, filename)
             self.file_manager.write_file(filepath, content)
-            print(f"[LocalServer] Saved file: {filename}")
+            debug_print(f"[LocalServer] Saved file: {filename}")
         
         # Save requirements.txt if provided
         requirements = code_package.get("requirements", [])
@@ -83,7 +97,7 @@ class LocalServer:
             req_path = self.file_manager.join_path(self.current_project_path, "requirements.txt")
             req_content = '\n'.join(requirements)
             self.file_manager.write_file(req_path, req_content)
-            print(f"[LocalServer] Saved requirements.txt with {len(requirements)} packages")
+            debug_print(f"[LocalServer] Saved requirements.txt with {len(requirements)} packages")
         
         return self.current_project_path
     
@@ -110,7 +124,7 @@ class LocalServer:
         filepath = self.file_manager.join_path(target_path, filename)
         self.file_manager.write_file(filepath, content)
         
-        print(f"[LocalServer] Saved file: {filename}")
+        debug_print(f"[LocalServer] Saved file: {filename}")
         return filepath
     
     def execute_code(self, entry_point="main.py", timeout=30):
@@ -132,8 +146,8 @@ class LocalServer:
         if not self.file_manager.file_exists(entry_file):
             raise FileNotFoundError(f"Entry point '{entry_point}' not found in project directory")
         
-        print(f"\n[LocalServer] Executing: {entry_point}")
-        print("=" * 60)
+        debug_print(f"\n[LocalServer] Executing: {entry_point}")
+        debug_print("=" * 60)
         
         start_time = time.time()
         
@@ -161,18 +175,18 @@ class LocalServer:
             }
             
             # Print results
-            print(f"[LocalServer] Execution completed in {execution_time:.2f} seconds")
-            print(f"[LocalServer] Return code: {result.returncode}")
+            debug_print(f"[LocalServer] Execution completed in {execution_time:.2f} seconds")
+            debug_print(f"[LocalServer] Return code: {result.returncode}")
             
             if result.stdout:
-                print("\n--- STDOUT ---")
-                print(result.stdout)
+                debug_print("\n--- STDOUT ---")
+                debug_print(result.stdout)
             
             if result.stderr:
-                print("\n--- STDERR ---")
-                print(result.stderr)
+                debug_print("\n--- STDERR ---")
+                debug_print(result.stderr)
             
-            print("=" * 60)
+            debug_print("=" * 60)
             
             return self.execution_results
             
@@ -186,7 +200,7 @@ class LocalServer:
                 "success": False,
                 "timestamp": datetime.now().isoformat()
             }
-            print(f"[LocalServer] ERROR: Execution timeout after {timeout} seconds")
+            debug_print(f"[LocalServer] ERROR: Execution timeout after {timeout} seconds")
             return self.execution_results
             
         except Exception as e:
@@ -199,7 +213,7 @@ class LocalServer:
                 "success": False,
                 "timestamp": datetime.now().isoformat()
             }
-            print(f"[LocalServer] ERROR: {str(e)}")
+            debug_print(f"[LocalServer] ERROR: {str(e)}")
             return self.execution_results
     
     def run_tests(self, test_file="test_main.py", timeout=30):
@@ -230,8 +244,8 @@ class LocalServer:
                 "timestamp": datetime.now().isoformat()
             }
         
-        print(f"\n[LocalServer] Running tests: {test_file}")
-        print("=" * 60)
+        debug_print(f"\n[LocalServer] Running tests: {test_file}")
+        debug_print("=" * 60)
         
         start_time = time.time()
         
@@ -269,19 +283,19 @@ class LocalServer:
             }
             
             # Print results
-            print(f"[LocalServer] Test execution completed in {execution_time:.2f} seconds")
-            print(f"[LocalServer] Return code: {result.returncode}")
-            print(f"[LocalServer] Tests {'PASSED' if result.returncode == 0 else 'FAILED'}")
+            debug_print(f"[LocalServer] Test execution completed in {execution_time:.2f} seconds")
+            debug_print(f"[LocalServer] Return code: {result.returncode}")
+            debug_print(f"[LocalServer] Tests {'PASSED' if result.returncode == 0 else 'FAILED'}")
             
             if result.stdout:
-                print("\n--- STDOUT ---")
-                print(result.stdout)
+                debug_print("\n--- STDOUT ---")
+                debug_print(result.stdout)
             
             if result.stderr:
-                print("\n--- STDERR ---")
-                print(result.stderr)
+                debug_print("\n--- STDERR ---")
+                debug_print(result.stderr)
             
-            print("=" * 60)
+            debug_print("=" * 60)
             
             return self.execution_results
             
@@ -300,7 +314,7 @@ class LocalServer:
                 "test_file": test_file_path,
                 "timestamp": datetime.now().isoformat()
             }
-            print(f"[LocalServer] ERROR: Test execution timeout after {timeout} seconds")
+            debug_print(f"[LocalServer] ERROR: Test execution timeout after {timeout} seconds")
             return self.execution_results
             
         except Exception as e:
@@ -318,7 +332,7 @@ class LocalServer:
                 "test_file": test_file_path,
                 "timestamp": datetime.now().isoformat()
             }
-            print(f"[LocalServer] ERROR: {str(e)}")
+            debug_print(f"[LocalServer] ERROR: {str(e)}")
             return self.execution_results
     
     def get_execution_results(self):
@@ -357,7 +371,7 @@ class LocalServer:
         """Clean up workspace directory"""
         if self.current_project_path and self.file_manager.directory_exists(self.current_project_path):
             self.file_manager.delete_directory(self.current_project_path)
-            print(f"[LocalServer] Cleaned up workspace: {self.current_project_path}")
+            debug_print(f"[LocalServer] Cleaned up workspace: {self.current_project_path}")
             self.current_project = None
             self.current_project_path = None
 

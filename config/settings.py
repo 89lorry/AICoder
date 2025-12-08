@@ -1,3 +1,9 @@
+# Project Group 3
+# Peter Xie (28573670)
+# Xin Tang (79554618)
+# Keyan Miao (42708776)
+# Keyi Feng (84254877)
+
 """
 Settings Module
 Configuration settings for the MCP multi-agent system
@@ -7,17 +13,19 @@ import os
 from pathlib import Path
 
 # Load environment variables from .env file
+import sys
 try:
     from dotenv import load_dotenv
     # Get the project root directory (parent of config directory)
     root_dir = Path(__file__).parent.parent
     env_path = root_dir / '.env'
     load_dotenv(dotenv_path=env_path)
-    print(f"[Settings] Loaded environment from {env_path}")
+    # Use stderr to avoid interfering with stdout (needed for MCP JSON-RPC)
+    print(f"[Settings] Loaded environment from {env_path}", file=sys.stderr)
 except ImportError:
-    print("[Settings] python-dotenv not installed, using system environment variables only")
+    print("[Settings] python-dotenv not installed, using system environment variables only", file=sys.stderr)
 except Exception as e:
-    print(f"[Settings] Error loading .env file: {e}")
+    print(f"[Settings] Error loading .env file: {e}", file=sys.stderr)
 
 
 class Settings:
