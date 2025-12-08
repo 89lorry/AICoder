@@ -129,30 +129,31 @@ Requirements:
 5. Follow pytest best practices
 6. Include docstrings explaining what each test does
 7. Make tests readable and maintainable
-8. Import functions/classes directly and test them - do NOT test main() functions or if __name__ blocks
+8. Import functions/classes directly - DO NOT test main() or if __name__ blocks
 
-CRITICAL UI/LOOP TESTING RULES (MUST FOLLOW):
-9. **DO NOT** write tests that call methods containing infinite loops (while True, while running, etc.)
-10. **DO NOT** test UI.run(), main_loop(), event_loop() or similar continuous execution methods
-11. **DO NOT** test interactive CLI methods that block waiting for user input
-12. If the code has UI classes (UserInterface, CLI, Menu, etc.):
-   - Test individual UI methods (display_menu, add_item_ui, etc.) that don't loop
-   - Use monkeypatch to mock input() and print() functions
-   - Mock methods must provide ALL expected inputs INCLUDING exit conditions
-   - DO NOT call the main run() or start() methods that contain loops
-13. Add @pytest.mark.timeout(5) decorator to any test that uses mocked input/print
-14. Tests must be able to complete within 5 seconds
+CRITICAL TESTING RULES:
+9. **DO NOT** test methods with infinite loops (while True, .run(), .main_loop(), .start())
+10. **DO NOT** test interactive CLI methods that block for input
+11. For UI classes: Test individual methods, NOT the main loop
+12. Add @pytest.mark.timeout(5) to tests using mocked input/print
+13. Tests must complete within 5 seconds
 
-Examples of FORBIDDEN test patterns:
-- ui.run()  # FORBIDDEN - infinite loop
-- app.main_loop()  # FORBIDDEN - blocks forever
-- interface.start()  # FORBIDDEN - continuous execution
-- while True in test body  # FORBIDDEN
+DATA & FILE I/O RULES:
+14. Understand library behavior (CSV missing values = None, not error)
+15. CSV errors need EXTRA fields, not missing fields
+16. Use tmp_path fixture for file tests
+17. Create actual files for I/O tests
+18. Check for None explicitly: `assert value is None`
+19. Use pytest.approx() for floating-point comparisons
 
-Examples of ALLOWED test patterns:
-- ui.add_contact_ui()  # OK - single action method
-- ui.display_menu()  # OK - display only
-- menu.process_choice('1')  # OK - single choice processing
+ASSERTION RULES:
+20. Manually TRACE through logic - don't guess expected counts
+21. Count INDIVIDUAL violations, not records with violations
+22. Empty string "" and None are NOT equal
+23. Empty string "" CAN be a duplicate of another ""
+24. None CAN be a duplicate of another None
+25. Understand range boundaries: `< 30` excludes 30, `<= 30` includes 30
+26. Use specific assertions: `assert len(data) == 3`, not just `assert data`
 
 Generate a complete test file named test_main.py that can be executed with pytest.
 Include all necessary imports and setup.

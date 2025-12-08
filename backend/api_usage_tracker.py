@@ -66,6 +66,7 @@ class APIUsageTracker:
         agent_name: str,
         tokens_used: Any,
         metadata: Optional[Dict[str, Any]] = None,
+        iteration: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Record API token usage for an agent.
@@ -74,6 +75,7 @@ class APIUsageTracker:
             agent_name: Name of the agent making the request.
             tokens_used: Number of tokens consumed (int or dict with token info).
             metadata: Optional contextual information (request id, prompt size, etc.).
+            iteration: Optional iteration number (for debugger tracking).
         """
         if not self.enabled:
             return None
@@ -84,7 +86,7 @@ class APIUsageTracker:
             tokens_count = tokens_used.get("total_tokens", 0)
             # Store the full dict as metadata if not provided
             if metadata is None:
-                metadata = tokens_used
+                metadata = tokens_used.copy()
         elif tokens_used is None:
             tokens_count = 0
         else:
@@ -93,11 +95,18 @@ class APIUsageTracker:
         if tokens_count < 0:
             raise ValueError("tokens_used must be a non-negative integer")
         
+        # Add iteration to metadata if provided
+        if metadata is None:
+            metadata = {}
+        if iteration is not None:
+            metadata['iteration'] = iteration
+        
         entry = {
             "agent": agent_name or "unknown",
             "tokens": int(tokens_count),
             "timestamp": datetime.utcnow().isoformat(),
-            "metadata": metadata or {},
+            "metadata": metadata,
+            "iteration": iteration,
         }
         
         with self._lock:
@@ -108,11 +117,23 @@ class APIUsageTracker:
         return entry
     
     def get_usage_statistics(self) -> Dict[str, Any]:
-        """Get comprehensive usage statistics."""
+        """Get comprehensive usage statistics with iteration details."""
         with self._lock:
             agent_breakdown = defaultdict(int)
+            agent_calls = defaultdict(int)
+            debugger_iterations = defaultdict(int)
+            
             for entry in self.usage_log:
-                agent_breakdown[entry["agent"]] += int(entry["tokens"])
+                agent = entry["agent"]
+                tokens = int(entry["tokens"])
+                
+                agent_breakdown[agent] += tokens
+                agent_calls[agent] += 1
+                
+                # Track debugger iterations separately
+                if agent == "debugger" and entry.get("iteration"):
+                    iteration = entry["iteration"]
+                    debugger_iterations[iteration] += tokens
             
             last_event = self.usage_log[-1] if self.usage_log else None
             
@@ -121,6 +142,8 @@ class APIUsageTracker:
                 "total_tokens": self.total_tokens,
                 "call_count": len(self.usage_log),
                 "agent_breakdown": dict(agent_breakdown),
+                "agent_calls": dict(agent_calls),
+                "debugger_iterations": dict(debugger_iterations),
                 "last_event": last_event,
                 "log_file": str(self.persist_path),
             }

@@ -93,6 +93,10 @@ class GradioUI:
             # Run workflow
             result = self.orchestrator.run_complete_workflow(full_requirements)
             
+            # Signal workflow completion to stop progress animation
+            if progress is not None:
+                progress(1.0, desc="✅ Workflow completed!")
+            
             if result and result.get('final_status') == 'success':
                 # Extract generated files
                 code_package = result.get('code_package', {})
@@ -120,17 +124,8 @@ class GradioUI:
                     app_update = gr.update(choices=[], value=None)
                     test_update = gr.update(choices=[], value=None)
                 
-                # Usage stats - tracker now resets each session
-                if self.api_tracker:
-                    stats = self.api_tracker.get_usage_statistics()
-                    total_tokens = stats.get('total_tokens', 0)
-                    total_calls = stats.get('call_count', 0)
-                    
-                    usage_md = f"**API Calls**: {total_calls}  |  **Total Tokens**: {total_tokens:,}"
-                    token_progress = total_tokens
-                else:
-                    usage_md = "**API Calls**: 0  |  **Total Tokens**: 0"
-                    token_progress = 0
+                # Usage stats - read from api_usage.json
+                usage_md, token_progress = self._generate_usage_display()
                 
                 return (
                     app_files,
@@ -144,15 +139,15 @@ class GradioUI:
             else:
                 # Workflow failed
                 error_msg = result.get('error', 'Workflow failed') if result else 'Workflow failed'
-                return (
-                    {},
-                    {},
-                    gr.update(choices=[], value=None),
-                    gr.update(choices=[], value=None),
-                    f"❌ Error: {error_msg}",
-                    "**API Calls**: 0  |  **Total Tokens**: 0",
-                    0,
-                )
+            return (
+                {},
+                {},
+                gr.update(choices=[], value=None),
+                gr.update(choices=[], value=None),
+                f"❌ Error: {error_msg}",
+                self._generate_usage_display()[0],
+                0,
+            )
         except Exception as e:
             import gradio as gr
             logging.error(f"Error in _on_generate: {e}")
@@ -162,9 +157,79 @@ class GradioUI:
                 gr.update(choices=[], value=None),
                 gr.update(choices=[], value=None),
                 f"❌ Exception: {str(e)}",
-                "**API Calls**: 0  |  **Total Tokens**: 0",
+                self._generate_usage_display()[0],
                 0,
             )
+    
+    def _generate_usage_display(self):
+        """Generate formatted usage display from api_usage.json"""
+        import json
+        from pathlib import Path
+        from collections import defaultdict
+        
+        try:
+            api_usage_path = Path("api_usage.json")
+            if not api_usage_path.exists():
+                return "**API Calls**: 0  |  **Total Tokens**: 0", 0
+            
+            with open(api_usage_path, 'r') as f:
+                usage_data = json.load(f)
+            
+            total_tokens = usage_data.get('total_tokens', 0)
+            usage_log = usage_data.get('usage_log', [])
+            
+            # Calculate per-agent breakdown
+            agent_stats = defaultdict(lambda: {'calls': 0, 'tokens': 0, 'iterations': {}})
+            
+            for entry in usage_log:
+                agent = entry.get('agent', 'unknown')
+                tokens = entry.get('tokens', 0)
+                iteration = entry.get('iteration')
+                
+                agent_stats[agent]['calls'] += 1
+                agent_stats[agent]['tokens'] += tokens
+                
+                # Track debugger iterations
+                if agent == 'debugger' and iteration:
+                    if iteration not in agent_stats[agent]['iterations']:
+                        agent_stats[agent]['iterations'][iteration] = 0
+                    agent_stats[agent]['iterations'][iteration] += tokens
+            
+            # Build formatted display
+            lines = [
+                f"### 📊 API Usage Summary",
+                f"**Total Tokens**: {total_tokens:,} | **Total Calls**: {len(usage_log)}",
+                "",
+                "#### 🤖 Agent Breakdown:"
+            ]
+            
+            # Agent order for display
+            agent_order = ['architect', 'coder', 'tester', 'debugger']
+            agent_icons = {
+                'architect': '🏗️',
+                'coder': '💻',
+                'tester': '🧪',
+                'debugger': '🐛'
+            }
+            
+            for agent in agent_order:
+                if agent in agent_stats:
+                    stats = agent_stats[agent]
+                    icon = agent_icons.get(agent, '🔧')
+                    lines.append(f"- **{icon} {agent.capitalize()}**: {stats['tokens']:,} tokens ({stats['calls']} calls)")
+                    
+                    # Show iteration breakdown for debugger
+                    if agent == 'debugger' and stats['iterations']:
+                        for iteration in sorted(stats['iterations'].keys()):
+                            tokens = stats['iterations'][iteration]
+                            lines.append(f"  - Iteration {iteration}: {tokens:,} tokens")
+            
+            usage_md = "\n".join(lines)
+            return usage_md, total_tokens
+            
+        except Exception as e:
+            logging.error(f"Error reading api_usage.json: {e}")
+            return "**API Calls**: 0  |  **Total Tokens**: 0", 0
     
     def _on_clear(self):
         """Reset all fields and outputs"""
@@ -279,6 +344,7 @@ class GradioUI:
                     usage_panel,
                     token_progress,
                 ],
+                show_progress="full",  # Enable Gradio's progress tracking
             )
             
             clear_btn.click(

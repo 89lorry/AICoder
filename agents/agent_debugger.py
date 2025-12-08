@@ -380,12 +380,17 @@ FILE_START: another_file.py
 [complete fixed code here]  
 FILE_END
 
-CRITICAL RULES:
+⚠️ CRITICAL RULES:
 - Use the exact format above with ANALYSIS_START/END and FILE_START/END markers
 - Include complete code for each file that needs fixing
 - No JSON, no markdown code blocks
 - Only include files that actually need changes
 - If this is attempt 2+, DO NOT repeat the same fix that failed before!
+
+⚠️ CRITICAL: You can debug BOTH application code AND test code!
+- If test expectations are wrong, FIX THE TEST FILE
+- If application logic is wrong, FIX THE APPLICATION FILE
+- Sometimes the test is the bug, not the code!
 
 Previous attempts: {attempt - 1}
 {f"⚠️ WARNING: You already tried {attempt - 1} time(s). Use a DIFFERENT approach!" if attempt > 1 else ""}
@@ -398,7 +403,7 @@ Previous attempts: {attempt - 1}
                     if self.api_usage_tracker:
                         token_usage = self.langchain_wrapper.get_token_usage()
                         if token_usage:
-                            self.api_usage_tracker.track_usage("debugger", token_usage)
+                            self.api_usage_tracker.track_usage("debugger", token_usage, iteration=attempt)
                     # Log conversation
                     response_text = response if isinstance(response, str) else self.mcp_client.extract_text_from_response(response)
                     self.conversation_logger.log_interaction(
@@ -413,7 +418,7 @@ Previous attempts: {attempt - 1}
                     if self.api_usage_tracker:
                         token_usage = self.mcp_client.get_token_usage()
                         if token_usage:
-                            self.api_usage_tracker.track_usage("debugger", token_usage)
+                            self.api_usage_tracker.track_usage("debugger", token_usage, iteration=attempt)
                     # Log conversation
                     response_text = self.mcp_client.extract_text_from_response(response)
                     self.conversation_logger.log_interaction(
