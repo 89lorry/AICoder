@@ -110,9 +110,9 @@ class MCPOrchestrator:
         process.stdin.write(request_str.encode())
         await process.stdin.drain()
         
-        # Read response with timeout
+        # Read response with timeout (300s for all agents, especially debugger)
         try:
-            response_line = await asyncio.wait_for(process.stdout.readline(), timeout=120.0)
+            response_line = await asyncio.wait_for(process.stdout.readline(), timeout=300.0)
         except asyncio.TimeoutError:
             # Check stderr for errors
             stderr_output = await process.stderr.read(1000)

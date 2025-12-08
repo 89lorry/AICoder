@@ -34,6 +34,7 @@ class APIUsageTracker:
         self.total_tokens: int = 0
         self.usage_log: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
+        self._persisted_count = 0  # Track how many entries we've written to file
         
         # Start fresh each session - don't load previous usage
         # if self.enabled:
@@ -72,10 +73,15 @@ class APIUsageTracker:
                 # File corrupted, start fresh
                 pass
         
-        # Merge: combine existing with current instance data
-        # This ensures multi-process agents don't overwrite each other
-        merged_total = existing_total + self.total_tokens
-        merged_log = existing_log + self.usage_log
+        # Merge: Only add entries from THIS process that haven't been persisted yet
+        # _persisted_count tracks how many of self.usage_log we've already written
+        new_entries = self.usage_log[self._persisted_count:]
+        
+        # Calculate tokens only from new entries
+        new_tokens = sum(entry.get("tokens", 0) for entry in new_entries)
+        
+        merged_total = existing_total + new_tokens
+        merged_log = existing_log + new_entries
         
         payload = {
             "total_tokens": merged_total,
@@ -86,9 +92,8 @@ class APIUsageTracker:
         with self.persist_path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
         
-        # Update instance to reflect merged state
-        self.total_tokens = merged_total
-        self.usage_log = merged_log
+        # Update persisted count to reflect what we've written
+        self._persisted_count = len(self.usage_log)
     
     def track_usage(
         self,
