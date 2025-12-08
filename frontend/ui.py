@@ -83,6 +83,20 @@ class GradioUI:
                     0,
                 )
             
+            # Reset API usage tracker for this generation
+            if self.api_tracker:
+                self.api_tracker.reset_tracker()
+            
+            # Also delete the api_usage.json file to ensure clean reset
+            import json
+            from pathlib import Path
+            api_usage_file = Path("api_usage.json")
+            if api_usage_file.exists():
+                try:
+                    api_usage_file.unlink()
+                except Exception as e:
+                    logging.error(f"Failed to delete api_usage.json: {e}")
+            
             # Combine description and requirements
             full_requirements = f"{description.strip()}\n\n{requirements.strip()}"
             
