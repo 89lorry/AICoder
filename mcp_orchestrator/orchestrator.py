@@ -391,6 +391,14 @@ class MCPOrchestrator:
             test_info = json.loads(test_gen_result) if isinstance(test_gen_result, str) else test_gen_result
             self.logger.info("✅ Tests generated successfully")
             
+            # Add test_main.py to code_package for UI display
+            if 'test_code' in test_info:
+                if 'code' not in code_package:
+                    code_package['code'] = {}
+                code_package['code']['test_main.py'] = test_info['test_code']
+                result['code_package'] = code_package
+                self.logger.info("Added test_main.py to code_package for UI display")
+            
             # Step 5: Tester - Run tests
             self.logger.info("\n[Step 4] Tester: Running tests via MCP...")
             test_run_result = await self.call_tool(
@@ -450,6 +458,11 @@ class MCPOrchestrator:
                 if debug_result.get('success', False):
                     self.logger.info(f"\n✅ Debugger fixed code after {len(debug_result.get('attempts', []))} attempts")
                     result['final_status'] = 'success'
+                    
+                    # Update code_package with fixed code from debugger
+                    if 'fixed_code' in debug_result:
+                        result['code_package']['code'] = debug_result['fixed_code']
+                        self.logger.info("Updated code_package with debugger's fixed code")
                     
                     # Show final test results
                     if debug_result.get('attempts'):

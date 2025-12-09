@@ -145,6 +145,16 @@ class WorkflowOrchestrator:
             result["test_results"] = test_results
             result["test_file_path"] = self.tester.test_file_path
             
+            # Add test_main.py to code_package so it appears in UI
+            if self.tester.test_file_path and os.path.exists(self.tester.test_file_path):
+                with open(self.tester.test_file_path, 'r', encoding='utf-8') as f:
+                    test_content = f.read()
+                if "code" not in code_package:
+                    code_package["code"] = {}
+                code_package["code"]["test_main.py"] = test_content
+                result["code_package"] = code_package
+                self.logger.info("Added test_main.py to code_package for UI display")
+            
             # Check if tests passed
             test_passed = test_results.get("passed", False)
             
@@ -174,6 +184,12 @@ class WorkflowOrchestrator:
                     self.logger.info(f"\n✅ All tests passed after {result['debug_attempts']} debugger attempt(s)! Workflow complete.")
                     result["final_status"] = "success"
                     result["final_test_results"] = debug_result.get("final_test_results")
+                    
+                    # Update code_package with fixed code from debugger
+                    fixed_code = debug_result.get("fixed_code", {})
+                    if fixed_code:
+                        result["code_package"]["code"] = fixed_code
+                        self.logger.info("Updated code_package with debugger's fixed code")
                 else:
                     self.logger.warning(f"\n⚠️  Tests still failing after {result['debug_attempts']} debugger attempt(s).")
                     result["final_status"] = "failed"

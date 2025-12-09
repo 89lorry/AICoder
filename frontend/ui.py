@@ -50,12 +50,23 @@ def _partition_files(files) -> Tuple[Dict[str, str], Dict[str, str]]:
         return app_files, test_files
     
     for path, content in items:
-        if path.startswith("tests/") or path.lower().endswith("_test.py") or path.lower().startswith("test_"):
+        # Extract just the filename from the path for checking
+        filename = path.split('/')[-1].lower()
+        
+        # Classify as test file if:
+        # 1. Path starts with "tests/" directory
+        # 2. Filename ends with "_test.py"
+        # 3. Filename starts with "test_" (matches both test_main.py and test_data.py)
+        if path.startswith("tests/") or filename.endswith("_test.py") or filename.startswith("test_"):
             test_files[path] = content
+            logging.debug(f"Classified as test file: {path}")
         else:
             app_files[path] = content
+            logging.debug(f"Classified as app file: {path}")
     
     logging.info(f"Partitioned: {len(app_files)} app files, {len(test_files)} test files")
+    logging.info(f"Test files: {list(test_files.keys())}")
+    logging.info(f"App files: {list(app_files.keys())}")
     return app_files, test_files
 
 

@@ -119,7 +119,7 @@ class AgentTester:
         # Prepare context for test generation
         code_files = self.code_package.get("code", {})
         
-        prompt = f"""Generate comprehensive pytest test cases for the following Python code files:
+        prompt = f"""Generate integration test cases for the following Python code files:
 
 Code Files:
 {self._format_code_for_testing(code_files)}
@@ -127,42 +127,34 @@ Code Files:
 Architectural Plan:
 {self._format_architectural_plan()}
 
-Requirements:
-1. Create comprehensive test cases using pytest
-2. Test all functions, classes, and main logic
-3. Include edge cases and error handling tests
-4. Use fixtures where appropriate
-5. Follow pytest best practices
-6. Include docstrings explaining what each test does
-7. Make tests readable and maintainable
-8. Import functions/classes directly - DO NOT test main() or if __name__ blocks
+INTEGRATION TESTING APPROACH:
+Write integration tests that test the system as a whole, focusing on real end-to-end functionality:
 
-CRITICAL TESTING RULES:
-9. **DO NOT** test methods with infinite loops (while True, .run(), .main_loop(), .start())
-10. **DO NOT** test interactive CLI methods that block for input
-11. For UI classes: Test individual methods, NOT the main loop
-12. Add @pytest.mark.timeout(5) to tests using mocked input/print
-13. Tests must complete within 5 seconds
+1. **Test Real Workflows**: Test complete user scenarios and data flows
+2. **No Mocking**: Use real functions and classes - avoid mocks, patches, or stubs
+3. **Test Core Functions**: Import and test utility functions, helper methods, and business logic directly
+4. **Skip Interactive Code**: DO NOT test infinite loops, CLI input/output, or blocking methods (.run(), .main_loop(), .start(), while True)
+5. **File I/O**: Use pytest's tmp_path fixture for testing file operations with real files
+6. **Data Validation**: Test data processing, validation logic, and transformations with real data
+7. **Edge Cases**: Include boundary conditions and error scenarios
+8. **Keep Tests Simple**: Tests should be straightforward and complete within 5 seconds
 
-DATA & FILE I/O RULES:
-14. Understand library behavior (CSV missing values = None, not error)
-15. CSV errors need EXTRA fields, not missing fields
-16. Use tmp_path fixture for file tests
-17. Create actual files for I/O tests
-18. Check for None explicitly: `assert value is None`
-19. Use pytest.approx() for floating-point comparisons
+SPECIFIC RULES:
+- Import functions/classes directly - DO NOT test main() or if __name__ blocks
+- Use tmp_path fixture for file I/O tests (create actual test files)
+- For floating-point comparisons, use pytest.approx()
+- Check for None explicitly: `assert value is None`
+- Use specific assertions: `assert len(data) == 3`, not just `assert data`
+- Add clear docstrings explaining each test's purpose
+- Tests must be self-contained and independent
 
-ASSERTION RULES:
-20. Manually TRACE through logic - don't guess expected counts
-21. Count INDIVIDUAL violations, not records with violations
-22. Empty string "" and None are NOT equal
-23. Empty string "" CAN be a duplicate of another ""
-24. None CAN be a duplicate of another None
-25. Understand range boundaries: `< 30` excludes 30, `<= 30` includes 30
-26. Use specific assertions: `assert len(data) == 3`, not just `assert data`
+⚠️ CRITICAL FILE NAMING REQUIREMENT:
+The test file MUST be named 'test_main.py' - this is hardcoded in the test runner.
+Do NOT name it test_data.py, tests.py, or any other name.
+Include all helper functions, fixtures, and test data in the SAME test_main.py file.
 
-Generate a complete test file named test_main.py that can be executed with pytest.
-Include all necessary imports and setup.
+Generate a complete test file that will be saved as test_main.py and executed with pytest.
+Include all necessary imports and setup in this single file.
 
 CRITICAL: Your response must contain ONLY raw Python test code.
 DO NOT wrap the code in markdown code blocks (```python or ```).
