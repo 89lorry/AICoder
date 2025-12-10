@@ -429,36 +429,91 @@ Previous attempts: {attempt - 1}
 {f"⚠️ WARNING: You already tried {attempt - 1} time(s). Use a DIFFERENT approach!" if attempt > 1 else ""}
 """
             
+            # Retry loop for API calls - don't count API failures against max attempts
+            api_success = False
+            api_retry_count = 0
+            max_api_retries = 5  # Allow up to 5 API retries
+            
+            while not api_success and api_retry_count < max_api_retries:
+                try:
+                    # Single combined API call
+                    if self.langchain_wrapper:
+                        response = self.langchain_wrapper.invoke(prompt)
+                        if self.api_usage_tracker:
+                            token_usage = self.langchain_wrapper.get_token_usage()
+                            if token_usage:
+                                self.api_usage_tracker.track_usage("debugger", token_usage, iteration=attempt)
+                        # Log conversation
+                        response_text = response if isinstance(response, str) else self.mcp_client.extract_text_from_response(response)
+                        self.conversation_logger.log_interaction(
+                            prompt=prompt,
+                            response=response_text,
+                            metadata=self.langchain_wrapper.get_token_usage()
+                        )
+                    else:
+                        if not hasattr(self.mcp_client, 'session') or self.mcp_client.session is None:
+                            self.mcp_client.connect()
+                        response = self.mcp_client.send_request(prompt)
+                        if self.api_usage_tracker:
+                            token_usage = self.mcp_client.get_token_usage()
+                            if token_usage:
+                                self.api_usage_tracker.track_usage("debugger", token_usage, iteration=attempt)
+                        # Log conversation
+                        response_text = self.mcp_client.extract_text_from_response(response)
+                        self.conversation_logger.log_interaction(
+                            prompt=prompt,
+                            response=response_text,
+                            metadata=self.mcp_client.get_token_usage()
+                        )
+                    
+                    # API call succeeded
+                    api_success = True
+                    
+                except Exception as api_error:
+                    import time
+                    api_error_str = str(api_error)
+                    
+                    # Check if this is a 503 error or similar API unavailability
+                    is_503_error = (
+                        '503' in api_error_str or 
+                        'Service Unavailable' in api_error_str or
+                        'server error' in api_error_str.lower() or
+                        'temporarily unavailable' in api_error_str.lower()
+                    )
+                    
+                    if is_503_error:
+                        api_retry_count += 1
+                        if api_retry_count < max_api_retries:
+                            wait_time = min(2 ** api_retry_count, 60)  # Exponential backoff, max 60s
+                            self.logger.warning(
+                                f"⚠️ API unavailable (503 error) - attempt {api_retry_count}/{max_api_retries}. "
+                                f"Retrying in {wait_time}s... (This does NOT count against debug attempts)"
+                            )
+                            time.sleep(wait_time)
+                            continue  # Retry API call without incrementing main attempt counter
+                        else:
+                            self.logger.error(
+                                f"❌ API still unavailable after {max_api_retries} retries. "
+                                f"Skipping this debug attempt."
+                            )
+                            # Record this but don't count as a real debug attempt
+                            all_attempts.append({
+                                "attempt": attempt,
+                                "error": f"API unavailable (503) after {max_api_retries} retries: {api_error_str}",
+                                "test_passed": False,
+                                "skipped": True
+                            })
+                            # Continue to next debug attempt
+                            break
+                    else:
+                        # Non-503 error, re-raise to be handled by outer try-except
+                        raise
+            
+            # If API call failed after all retries, continue to next attempt
+            if not api_success:
+                continue
+            
             try:
-                # Single combined API call
-                if self.langchain_wrapper:
-                    response = self.langchain_wrapper.invoke(prompt)
-                    if self.api_usage_tracker:
-                        token_usage = self.langchain_wrapper.get_token_usage()
-                        if token_usage:
-                            self.api_usage_tracker.track_usage("debugger", token_usage, iteration=attempt)
-                    # Log conversation
-                    response_text = response if isinstance(response, str) else self.mcp_client.extract_text_from_response(response)
-                    self.conversation_logger.log_interaction(
-                        prompt=prompt,
-                        response=response_text,
-                        metadata=self.langchain_wrapper.get_token_usage()
-                    )
-                else:
-                    if not hasattr(self.mcp_client, 'session') or self.mcp_client.session is None:
-                        self.mcp_client.connect()
-                    response = self.mcp_client.send_request(prompt)
-                    if self.api_usage_tracker:
-                        token_usage = self.mcp_client.get_token_usage()
-                        if token_usage:
-                            self.api_usage_tracker.track_usage("debugger", token_usage, iteration=attempt)
-                    # Log conversation
-                    response_text = self.mcp_client.extract_text_from_response(response)
-                    self.conversation_logger.log_interaction(
-                        prompt=prompt,
-                        response=response_text,
-                        metadata=self.mcp_client.get_token_usage()
-                    )
                 
                 # Parse combined response using enhanced robust parser
                 if isinstance(response, dict):

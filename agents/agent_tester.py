@@ -147,6 +147,8 @@ SPECIFIC RULES:
 - Use specific assertions: `assert len(data) == 3`, not just `assert data`
 - Add clear docstrings explaining each test's purpose
 - Tests must be self-contained and independent
+- **When testing print statements, capture ALL output and check for content presence, NOT specific line indices**
+- **Always test return values/data structures first; only test print output if no return value exists**
 
 ⚠️ CRITICAL FILE NAMING REQUIREMENT:
 The test file MUST be named 'test_main.py' - this is hardcoded in the test runner.
