@@ -34,6 +34,14 @@ except ImportError:
     ANTHROPIC_AVAILABLE = False
     ChatAnthropic = None
 
+# Try to import Google Gemini
+try:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    GOOGLE_GENAI_AVAILABLE = True
+except ImportError:
+    GOOGLE_GENAI_AVAILABLE = False
+    ChatGoogleGenerativeAI = None
+
 from utils.memory_manager import MemoryManager
 from config.settings import Settings
 
@@ -65,32 +73,58 @@ class LangChainWrapper:
     def _initialize_llm(self):
         """Initialize the LLM based on provider"""
         try:
-            if self.llm_provider == "openai":
-                api_key = Settings.MCP_API_KEY or os.getenv("OPENAI_API_KEY")
+            # Auto-detect Google Gemini from MCP endpoint
+            mcp_endpoint = Settings.MCP_ENDPOINT or ""
+            is_google_gemini = "generativelanguage.googleapis.com" in mcp_endpoint
+            
+            if is_google_gemini and GOOGLE_GENAI_AVAILABLE:
+                # Use Google Gemini LangChain integration
+                api_key = Settings.MCP_API_KEY or os.getenv("GOOGLE_API_KEY")
                 if api_key:
+                    # Extract model name from endpoint if available
+                    model_name = "gemini-2.5-flash-lite"  # Default
+                    if "/models/" in mcp_endpoint:
+                        model_part = mcp_endpoint.split("/models/")[1]
+                        if ":" in model_part:
+                            model_name = model_part.split(":")[0]
+                    
+                    self.llm = ChatGoogleGenerativeAI(
+                        model=model_name,
+                        google_api_key=api_key,
+                        temperature=0.7,
+                        convert_system_message_to_human=True  # Gemini doesn't support system messages
+                    )
+                    self.logger.info(f"✅ Initialized Google Gemini LLM ({model_name})")
+                    return
+            
+            if self.llm_provider == "openai":
+                api_key = os.getenv("OPENAI_API_KEY")  # Don't use MCP_API_KEY for OpenAI
+                if api_key and not is_google_gemini:  # Don't try OpenAI with Google key
                     self.llm = ChatOpenAI(
                         model_name="gpt-4",
                         temperature=0.7,
                         openai_api_key=api_key
                     )
-                    self.logger.info("Initialized OpenAI LLM")
+                    self.logger.info("✅ Initialized OpenAI LLM")
+                    return
             
             elif self.llm_provider == "anthropic":
-                api_key = Settings.MCP_API_KEY or os.getenv("ANTHROPIC_API_KEY")
-                if api_key:
+                api_key = os.getenv("ANTHROPIC_API_KEY")  # Don't use MCP_API_KEY for Anthropic
+                if api_key and not is_google_gemini:  # Don't try Anthropic with Google key
                     self.llm = ChatAnthropic(
                         model="claude-3-opus-20240229",
                         temperature=0.7,
                         anthropic_api_key=api_key
                     )
-                    self.logger.info("Initialized Anthropic LLM")
+                    self.logger.info("✅ Initialized Anthropic LLM")
+                    return
             
-            else:
-                # Use MCP client as fallback
-                self.logger.info("Using MCP client as LLM provider")
+            # Use MCP client as fallback
+            self.logger.info("⚠️ No LangChain LLM initialized, will use MCP client as fallback")
         
         except Exception as e:
-            self.logger.warning(f"Failed to initialize LLM: {str(e)}. Will use MCP client.")
+            self.logger.warning(f"❌ Failed to initialize LLM: {str(e)}. Will use MCP client.")
+            self.logger.exception(e)  # Log full traceback for debugging
     
     def _initialize_chain(self):
         """Initialize LangChain chain with memory"""
@@ -116,20 +150,31 @@ class LangChainWrapper:
         # Try LangChain chain first
         if self.chain:
             try:
-                inputs = {"input": prompt}
-                
-                # Add context if provided
+                # Add context to prompt if provided
+                full_prompt = prompt
                 if context:
                     context_str = self._format_context(context)
-                    inputs["input"] = f"{context_str}\n\n{prompt}"
+                    full_prompt = f"{context_str}\n\n{prompt}"
                 
-                result = self.chain.invoke(inputs)
+                # Add memory context if available
+                if self.memory_manager:
+                    memory_context = self.memory_manager.get_chat_history()
+                    if memory_context:
+                        full_prompt = f"Previous conversation:\n{memory_context}\n\nCurrent request:\n{full_prompt}"
                 
-                # Extract response
-                if isinstance(result, dict):
-                    response = result.get("text", str(result))
+                # Invoke LangChain LLM directly with the prompt string
+                result = self.chain.invoke(full_prompt)
+                
+                # Extract response from LangChain response object
+                # ChatGoogleGenerativeAI returns an AIMessage with .content attribute
+                if hasattr(result, 'content'):
+                    response = result.content
+                elif isinstance(result, dict):
+                    response = result.get("text", result.get("content", str(result)))
                 else:
                     response = str(result)
+                
+                self.logger.info(f"✅ LangChain LLM response received ({len(response)} chars)")
                 
                 # Save to memory if available
                 if self.memory_manager:
@@ -138,9 +183,11 @@ class LangChainWrapper:
                 return response
             
             except Exception as e:
-                self.logger.warning(f"LangChain chain failed: {str(e)}, falling back to MCP client")
+                self.logger.warning(f"❌ LangChain chain failed: {str(e)}, falling back to MCP client")
+                self.logger.exception(e)
         
         # Fallback to MCP client
+        self.logger.info("Using MCP client fallback")
         return self._invoke_mcp(prompt, context)
     
     def _invoke_mcp(self, prompt: str, context: Optional[Dict[str, Any]] = None) -> str:

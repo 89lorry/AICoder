@@ -17,6 +17,7 @@ from utils.memory_manager import MemoryManager
 from utils.langchain_wrapper import LangChainWrapper
 from utils.conversation_logger import ConversationLogger
 from datetime import datetime
+from agents.agent_debugger_enhanced import EnhancedResponseParser
 
 
 class AgentDebugger:
@@ -459,43 +460,29 @@ Previous attempts: {attempt - 1}
                         metadata=self.mcp_client.get_token_usage()
                     )
                 
-                # Parse combined response in text format
+                # Parse combined response using enhanced robust parser
                 if isinstance(response, dict):
                     response_text = self.mcp_client.extract_text_from_response(response)
                 else:
                     response_text = str(response)
                 
-                # Parse text format with markers
-                analysis_summary = ""
-                fixed_files = {}
+                # Use EnhancedResponseParser with multiple fallback strategies
+                parser = EnhancedResponseParser(logger=self.logger)
+                parsed_result = parser.parse_debugger_response(response_text)
                 
-                # Extract analysis
-                if 'ANALYSIS_START' in response_text and 'ANALYSIS_END' in response_text:
-                    analysis_start = response_text.find('ANALYSIS_START')
-                    analysis_end = response_text.find('ANALYSIS_END')
-                    analysis_summary = response_text[analysis_start:analysis_end+12].strip()
-                    self.logger.info(f"Analysis extracted: {len(analysis_summary)} chars")
-                
-                # Extract files
-                import re
-                file_pattern = r'FILE_START:\s*(.+?)\n(.*?)FILE_END'
-                matches = re.findall(file_pattern, response_text, re.DOTALL)
-                
-                for filename, content in matches:
-                    filename = filename.strip()
-                    content = content.strip()
-                    fixed_files[filename] = content
-                    self.logger.info(f"Extracted fixed file: {filename} ({len(content)} chars)")
+                analysis_summary = parsed_result.get("analysis", "")
+                fixed_files = parsed_result.get("fixed_files", {})
                 
                 if not fixed_files:
-                    self.logger.warning("No fixed files found in response!")
+                    self.logger.warning("❌ Robust parser could not extract any files from AI response!")
+                    self.logger.debug(f"Response preview (first 500 chars): {response_text[:500]}")
                     # Try to continue with next attempt
                     attempt_result = {
                         "attempt": attempt,
-                        "analysis": {"summary": "Failed to parse response"},
+                        "analysis": {"summary": analysis_summary or "Failed to parse response"},
                         "fixed_files": [],
                         "test_passed": False,
-                        "error": "No fixed files in response"
+                        "error": "No fixed files in response despite trying multiple parsing strategies"
                     }
                     all_attempts.append(attempt_result)
                     continue

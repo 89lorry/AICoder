@@ -178,6 +178,13 @@ Response MUST be parseable JSON starting with {{ and ending with }}.
                     token_usage = self.langchain_wrapper.get_token_usage()
                     if token_usage:
                         self.api_usage_tracker.track_usage("architect", token_usage)
+                # Extract text for logging and parsing
+                response_text = response if isinstance(response, str) else self.mcp_client.extract_text_from_response(response)
+                self.conversation_logger.log_interaction(
+                    prompt=prompt,
+                    response=response_text,
+                    metadata=self.langchain_wrapper.get_token_usage()
+                )
             else:
                 if not hasattr(self.mcp_client, 'session') or self.mcp_client.session is None:
                     self.mcp_client.connect()
