@@ -409,7 +409,7 @@ CORE PRINCIPLE: Separate Data Logic from Presentation Logic
        results = manager.search_items(query)
        # Display data
        if results:
-           print(f"Found {len(results)} items:")
+           print(f"Found {{len(results)}} items:")
            for item in results:
                print(item)
    ```
